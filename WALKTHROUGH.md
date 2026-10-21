@@ -32,7 +32,7 @@ pinned commit. The license would allow committing it.
 Two checks in `fetch.extract`. The archive must declare the pinned commit (git writes the commit id into the tar's
 global pax header, `comment=...`), and each of the 421 files used must have the size and SHA-256 in
 `src/recall/corpus/manifest.json`. Extraction goes to a temporary directory that replaces `data/corpus` only if every
-file checks out. CI's corpus job downloads it fresh on every push and gets the same 1,505 chunks.
+file checks out. CI's corpus job downloads it fresh on every push and gets the same 1,503 chunks.
 
 **Why not just pin the archive's SHA-256?**
 GitHub generates archives on request and has changed their compression before, so the bytes can change while the
@@ -73,6 +73,12 @@ lines; admonitions, tabs, multi-line comments) and check what each part must bec
 unchanged and in order, each include adds one block, no build syntax, tag or comment survives outside code, every
 visible word survives, and a second pass changes nothing. Processing lines inside fences, or leaving markers alone,
 each fail it.
+
+**Did normalization miss anything on the real pages?**
+Front matter. Two pages (`index.md`, `advanced/templates.md`) start with YAML settings for the build between `---`
+lines, and the first version kept them as text, so each became a chunk ("--- render_macros: false ---"). I found it
+by listing the smallest chunks. Front matter is now removed, the real-corpus test checks no page starts with it, and
+re-ingesting updated exactly those two documents.
 
 **How do you know it handles every page?**
 `tests/test_real_corpus.py`: every one of the 125 pages normalizes, normalizing the output again changes nothing, and
@@ -138,7 +144,7 @@ so a change that alters chunks fails a test until the version is raised and the 
 
 **Why one transaction for the whole ingest?**
 Readers see the old corpus or the new one, never a mix, and a failure part way (a row PostgreSQL refuses) leaves the
-previous corpus (`test_a_failure_part_way_leaves_the_previous_corpus`). At 1,505 chunks it takes well under a second.
+previous corpus (`test_a_failure_part_way_leaves_the_previous_corpus`). At 1,503 chunks it takes well under a second.
 For a much bigger corpus I would load into a staging table and swap, to keep the transaction short.
 
 **What if two ingests run at once?**

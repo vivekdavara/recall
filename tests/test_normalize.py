@@ -169,3 +169,15 @@ def test_an_included_file_with_nul_is_refused():
             norm("{* ../../docs_src/q/nul.py *}")
     finally:
         del FILES["docs_src/q/nul.py"]
+
+
+def test_front_matter_is_removed():
+    assert norm("---\nrender_macros: false\n---\n\n# Templates { #templates }\n") == "\n# Templates { #templates }\n"
+    assert norm("---\ninclude_yaml:\n  sponsors: data/sponsors.yml\n...\nText") == "Text"
+
+
+def test_a_rule_line_is_not_front_matter():
+    # Only at the very start, and only when closed: elsewhere '---' is a horizontal rule, and stays.
+    assert norm("Text\n\n---\n\nMore\n---\n") == "Text\n\n---\n\nMore\n---\n"
+    assert norm("---\nnot closed\n") == "---\nnot closed\n"
+    assert norm(" ---\na: 1\n---\nx") == " ---\na: 1\n---\nx"

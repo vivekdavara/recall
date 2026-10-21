@@ -67,7 +67,7 @@ def normalize(page_path: str, text: str, read: Reader) -> str:
     """The page as plain Markdown. `read` returns an included file's text by its repository path."""
     if "\x00" in text:
         raise NormalizeError(f"{page_path}: NUL character")
-    text = text.replace("\r\n", "\n")
+    text = _strip_front_matter(text.replace("\r\n", "\n"))
     out: list[str] = []
     in_comment = False
     for line, fenced in _lines(text):
@@ -106,6 +106,21 @@ def title(text: str, fallback: str) -> str:
             if h is not None and h.level == 1 and h.title:
                 return h.title
     return fallback
+
+
+def _strip_front_matter(text: str) -> str:
+    """Remove YAML front matter: a first line '---', up to the next line that is '---' or '...'.
+
+    The documentation build reads it as page settings (index.md's sponsors file, templates.md's render_macros) and
+    doesn't show it. Without a closing line it isn't front matter, and a '---' later in a page is a horizontal rule.
+    """
+    if not text.startswith("---\n"):
+        return text
+    lines = text.split("\n")
+    for i in range(1, len(lines)):
+        if lines[i] in ("---", "..."):
+            return "\n".join(lines[i + 1 :])
+    return text
 
 
 def _lines(text: str) -> list[tuple[str, bool]]:

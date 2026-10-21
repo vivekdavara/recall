@@ -51,6 +51,7 @@ def test_normalizing_a_normalized_page_changes_nothing(documents: list[Document]
 
 def test_no_documentation_build_syntax_is_left_outside_code(documents: list[Document]):
     for d in documents:
+        assert not d.content.startswith("---\n"), d.path  # front matter
         for line in outside_fences(d.content):
             assert not line.lstrip().startswith(("{*", "{!", "///")), (d.path, line)
             assert "<!--" not in line, (d.path, line)
@@ -97,8 +98,9 @@ def test_every_page_chunks_within_the_invariants(documents: list[Document], max_
 
 
 def test_the_chunks_are_the_ones_this_chunker_version_makes(documents: list[Document]):
-    # A pin on the whole corpus: if a change to the chunker or the normalizer changes these numbers, raise
-    # CHUNKER_VERSION (so ingest re-chunks stored corpora) and re-pin them from the new output.
+    # A pin on the whole corpus. If a change to the chunker changes these numbers, raise CHUNKER_VERSION (so ingest
+    # re-chunks stored corpora) and re-pin them from the new output. A change to normalization changes the
+    # documents' content hashes, so ingest re-chunks those documents by itself: re-pin only.
     chunks = [c for d in documents for c in chunking.chunk_document(d.content)]
     assert chunking.CHUNKER_VERSION == 1
-    assert (len(chunks), sum(c.token_count for c in chunks)) == (1505, 217429)
+    assert (len(chunks), sum(c.token_count for c in chunks)) == (1503, 217405)

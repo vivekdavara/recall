@@ -35,7 +35,7 @@ likely to ask.
 flowchart LR
     A[GitHub archive<br/>pinned commit] -->|recall fetch:<br/>commit id + manifest| B[data/corpus<br/>421 files]
     B -->|normalize| C[125 pages of<br/>plain Markdown]
-    C -->|chunk| D[1,505 chunks<br/>with spans]
+    C -->|chunk| D[1,503 chunks<br/>with spans]
     D -->|recall ingest| E[(PostgreSQL 17<br/>documents, chunks)]
     E -.->|day 2| F[pgvector HNSW +<br/>full-text GIN]
     F -.->|days 2-3| G[hybrid retrieval, rerank,<br/>answer with citations]
@@ -83,24 +83,26 @@ document. Settings: `RECALL_DATABASE_URL` (default `postgresql://localhost:5544/
 
 ## Results (day 1)
 
-The corpus, chunked with the default `max_tokens` 256 (`.venv/bin/recall stats`, at `40a7144`; the numbers are
-deterministic, and CI's corpus job prints the same table from a fresh download):
+The corpus, chunked with the default `max_tokens` 256 (`.venv/bin/recall stats`, after the front-matter fix; the
+numbers are deterministic, and CI's corpus job prints the same table from a fresh download):
 
 | | |
 |---|---|
 | Pages kept | 125 of FastAPI's 156 English pages |
 | Files in the manifest | 421 (125 pages, 295 included code files, the license) |
-| Normalized text | 972,663 characters |
-| Chunks | 1,505 |
-| Tokens (Recall's measure) | 217,429 |
+| Normalized text | 972,582 characters |
+| Chunks | 1,503 |
+| Tokens (Recall's measure) | 217,405 |
 | Tokens a chunk | min 3, p50 142, p95 253, max 256; 27 chunks at the maximum |
 
 The same commit's archive by tag and by commit id differ in bytes (18,018,516 and 18,023,996, since the top
 directory is named after what was asked for) and give the same manifest, which is why the files are pinned rather than
 the archive.
 
-`recall ingest` on that corpus: 125 added and 1,505 chunks written, then 125 unchanged and nothing written; every
-stored chunk equals `substr(document.content, start + 1, end - start)` (checked in SQL, and by `test_ingest.py`).
+`recall ingest` at `ba23111`: 125 added and 1,505 chunks written, then 125 unchanged and nothing written. After the
+front-matter fix: 2 updated (the two pages that have front matter), 123 unchanged, 49 chunks written, 1,503 stored;
+then 125 unchanged. Every stored chunk equals `substr(document.content, start + 1, end - start)` (checked in SQL, and by
+`test_ingest.py`).
 
 ## Tests
 
@@ -138,7 +140,7 @@ pg-script job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the 
   title and heading path for context instead of repeating its neighbour's text.
 - **A token measure of word runs and single punctuation.** Closer to word pieces than words, and exactly additive, so
   the size bound is exact. Day 2 checks it against the embedding model's own tokenizer.
-- **One transaction for the whole ingest.** 1,505 chunks take well under a second, and readers never see a mix of
+- **One transaction for the whole ingest.** 1,503 chunks take well under a second, and readers never see a mix of
   two corpora; the cost is a long transaction for a much bigger corpus.
 - **The builtin C.UTF-8 collation** locally and in CI, so text sorts by code point in both places.
 

@@ -73,7 +73,9 @@ FastAPI's Markdown uses extensions of its documentation build. `recall.corpus.no
 Markdown that reads the way the rendered page does. The normalized text is the document Recall stores, and every
 offset Recall reports (chunk spans, citations) is into it.
 
-Outside fenced code blocks, in this order:
+First, **front matter** goes: a first line `---` up to the next `---` or `...` line is page settings for the build
+(`index.md` names its sponsors file, `advanced/templates.md` turns macros off), not text. A `---` anywhere else is a
+horizontal rule and stays. Then, outside fenced code blocks, in this order:
 
 1. **Includes** become fenced code blocks with the included file's text. `{* path ln[a:b,c] hl[...] title[...] *}`
    includes a Python file (only the lines `ln` selects, if given; `hl` and `title` only change how the page is drawn,
