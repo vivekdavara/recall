@@ -161,10 +161,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (CorpusError, NormalizeError) as e:
         print(f"recall: {e}", file=sys.stderr)
         return 1
-    except psycopg.OperationalError as e:
-        # One line (psycopg's message has one per address it tried), and the URL without its password.
-        reason = " ".join(str(e).split())
-        print(f"recall: can't use the database {db.describe_url(db.database_url())}: {reason}", file=sys.stderr)
+    except (psycopg.OperationalError, db.BadDatabaseURL) as e:
+        # One line (psycopg's message has one per address it tried), and nothing of the password.
+        url = db.database_url()
+        message = f"recall: can't use the database {db.describe_url(url)}: {db.describe_error(url, e)}"
+        print(" ".join(message.split()), file=sys.stderr)
         return 1
     return code
 

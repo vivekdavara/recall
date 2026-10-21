@@ -21,20 +21,44 @@ def database_url() -> str:
     return os.environ.get("RECALL_DATABASE_URL", DEFAULT_DATABASE_URL)
 
 
+class BadDatabaseURL(ValueError):
+    """The database URL can't be read as a connection string. Its text is not repeated: it may hold a password."""
+
+
 def describe_url(url: str) -> str:
     """The URL's user, host, port and database, for messages: never its password."""
     try:
         parts = conninfo.conninfo_to_dict(url)
     except psycopg.ProgrammingError:
         return "(an unreadable RECALL_DATABASE_URL)"
+    host = str(parts.get("host", ""))
+    if "@" in host:
+        # An '@' left unescaped in a password moves the rest of the password into the host.
+        return "(RECALL_DATABASE_URL's host holds '@': write '@' in a password as %40)"
     user = f"{parts['user']}@" if parts.get("user") else ""
     port = f":{parts['port']}" if parts.get("port") else ""
-    return f"{user}{parts.get('host', '')}{port}/{parts.get('dbname', '')}"
+    return " ".join(f"{user}{host}{port}/{parts.get('dbname', '')}".split())
+
+
+def describe_error(url: str, error: Exception) -> str:
+    """Why the database can't be used, on one line, without anything that could be part of the password."""
+    try:
+        parts = conninfo.conninfo_to_dict(url)
+    except psycopg.ProgrammingError:
+        return "it can't be read as a connection string"
+    if "@" in str(parts.get("host", "")):
+        return "check how the password is written"  # psycopg's message would quote the host, part of the password
+    reason = " ".join(str(error).split())
+    password = str(parts.get("password") or "")
+    return reason.replace(password, "***") if password else reason
 
 
 def connect(url: str | None = None, application_name: str = "recall") -> psycopg.Connection:
     """An autocommit connection: every transaction is an explicit `with conn.transaction()` block."""
-    return psycopg.connect(url or database_url(), autocommit=True, application_name=application_name)
+    try:
+        return psycopg.connect(url or database_url(), autocommit=True, application_name=application_name)
+    except psycopg.ProgrammingError:
+        raise BadDatabaseURL("the database URL can't be read as a connection string") from None
 
 
 def lock_read_committed(conn: psycopg.Connection, key: int) -> None:

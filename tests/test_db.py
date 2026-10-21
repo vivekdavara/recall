@@ -151,3 +151,18 @@ def test_the_settings_row_holds_a_full_lowercase_commit_id(conn: psycopg.Connect
 )
 def test_a_database_url_is_described_without_its_password(url: str, described: str):
     assert db.describe_url(url) == described
+
+
+def test_an_error_never_repeats_the_password():
+    error = Exception("connection to server failed: password authentication failed (s3cret)\nsecond line")
+    assert db.describe_error("postgresql://alice:s3cret@h:1/d", error) == (
+        "connection to server failed: password authentication failed (***) second line"
+    )
+    assert db.describe_error("postgresql://alice:pa@ss@h:1/d", error) == "check how the password is written"
+    assert db.describe_url("postgresql://alice:pa@ss@h:1/d").startswith("(RECALL_DATABASE_URL's host holds '@'")
+
+
+def test_an_unreadable_url_is_refused_without_repeating_it():
+    with pytest.raises(db.BadDatabaseURL) as e:
+        db.connect("host=h password=open sesame")
+    assert "sesame" not in str(e.value) and e.value.__cause__ is None
