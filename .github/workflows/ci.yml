@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          # A throwaway container reachable only from this job: trust authentication, no password to keep.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: recall_test
+          # The same collation as scripts/pg.sh, so text sorts the same here and on a laptop.
+          POSTGRES_INITDB_ARGS: --locale-provider=builtin --builtin-locale=C.UTF-8
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d recall_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      RECALL_TEST_DATABASE_URL: postgresql://postgres@localhost:5544/recall_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e '.[dev]'
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Type-check
+        run: mypy
+      - name: Test
+        run: pytest --cov --cov-report=term-missing
