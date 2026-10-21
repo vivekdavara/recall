@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 import pytest
 from hypothesis import given, settings
@@ -202,7 +203,7 @@ def test_invariants_hold_on_random_documents(doc: Doc, max_tokens: int):
 
     # C2 order: ordinals count up and spans don't overlap.
     assert [c.ordinal for c in chunks] == list(range(len(chunks)))
-    for a, b in zip(chunks, chunks[1:], strict=False):
+    for a, b in pairwise(chunks):
         assert a.end <= b.start
 
     # C3 coverage: what no chunk holds is whitespace or a heading line, and no chunk holds part of a heading line.
@@ -250,7 +251,7 @@ def test_any_text_is_chunked_within_the_rules(text: str, max_tokens: int):
             covered[i] = True
     # The heading lines are exactly what lies between one section's end and the next one's start.
     secs = sections(text)
-    gaps = [(a.end, b.start) for a, b in zip(secs, secs[1:], strict=False)]
+    gaps = [(a.end, b.start) for a, b in pairwise(secs)]
     for i, ch in enumerate(text):
         if not covered[i] and not ch.isspace():
             assert any(gs <= i < ge for gs, ge in gaps), (i, ch)
