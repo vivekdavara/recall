@@ -83,16 +83,16 @@ document. Settings: `RECALL_DATABASE_URL` (default `postgresql://localhost:5544/
 
 ## Results (day 1)
 
-The corpus, chunked with the default `max_tokens` 256 (`.venv/bin/recall stats`, after the front-matter fix; the
-numbers are deterministic, and CI's corpus job prints the same table from a fresh download):
+The corpus, chunked with the default `max_tokens` 256 (`.venv/bin/recall stats` at `0e87c41`, chunker version 2;
+the numbers are deterministic, and CI's corpus job prints the same table from a fresh download):
 
 | | |
 |---|---|
 | Pages kept | 125 of FastAPI's 156 English pages |
 | Files in the manifest | 421 (125 pages, 295 included code files, the license) |
-| Normalized text | 972,582 characters |
+| Normalized text | 972,537 characters |
 | Chunks | 1,503 |
-| Tokens (Recall's measure) | 217,405 |
+| Tokens (Recall's measure) | 217,390 |
 | Tokens a chunk | min 7, p50 147, p95 250, max 256; 20 chunks at the maximum |
 
 Before the last cut of each section was evened out (chunker version 1), the same 1,503 chunks had min 3, p50 142,
@@ -105,7 +105,8 @@ the archive.
 
 `recall ingest` at `ba23111`: 125 added and 1,505 chunks written, then 125 unchanged and nothing written. After the
 front-matter fix: 2 updated (the two pages that have front matter), 123 unchanged, 49 chunks written, 1,503 stored;
-then 125 unchanged. Every stored chunk equals `substr(document.content, start + 1, end - start)` (checked in SQL, and by
+then 125 unchanged. After chunker version 2 (and the one-pass normalizer, which dropped `index.md`'s CSS): 125
+updated, 1,503 chunks written, then 125 unchanged. Every stored chunk equals `substr(document.content, start + 1, end - start)` (checked in SQL, and by
 `test_ingest.py`).
 
 ## Tests
@@ -134,6 +135,29 @@ CI (GitHub Actions) has three jobs: lint, types and tests against a `pgvector/pg
 corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests; and the
 pg-script job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test.
 
+## Review of day 1
+
+Two review agents, one after the other, each at a fixed commit in its own worktree, worded as correctness reviews,
+saving every bug they reproduced as a failing test (kept in `tests/review/` and `tests/review2/`); each was reproduced
+here before it was fixed.
+
+- **Review 1** (at `40a7144`, 15 minutes): the chunker held up under 20,000 fuzzed inputs; 23 failing tests elsewhere.
+  Normalization handled fences, comments and code spans in separate passes that disagreed: a comment around a code
+  block kept the code, `<!--` inside a code span swallowed the page up to the next `-->`, a raw include inside a
+  comment was expanded, `index.md`'s `<style>` CSS was page text, and the manifest missed includes on CRLF pages. Now
+  one pass in document order, and `includes()` is the set of files `normalize()` reads. Also: a failed rename lost
+  the corpus; `verify` followed a symlinked directory; a BOM hid a page's title; `# #` had the title `#`; concurrent
+  migrators and ingests failed under a REPEATABLE READ default (READ COMMITTED is now set before each advisory lock);
+  bad downloads and a missing database printed tracebacks. 22 of its 37 mutations survived. Two were dead code (now
+  removed) and one is `load`'s "only files in the manifest" check, which `verify` makes unreachable; for the rest I
+  added tests and ran each mutant again (with the fixes' own two mechanisms, 23 mutants): 21 caught at first, and the
+  two that survived (deleting a page exclusion) showed my exclusion test iterated over the list it was testing. It
+  has its own list now, and both are caught.
+- **Review 2** (at `0e87c41`): on the fixes and everything else since review 1.
+
+One judgement call went against the review: it expected a raw include outside a fence to become a fenced block, as
+DESIGN.md said; the documentation build inserts it as Markdown, so Recall now does too and DESIGN.md says so.
+
 ## Design decisions
 
 - **FastAPI's docs as the corpus.** MIT-licensed, one subject, many near-duplicate passages that differ in detail, and
@@ -155,6 +179,9 @@ pg-script job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the 
 - Normalization is written for FastAPI's documentation build; another corpus needs its own rules.
 - The token measure approximates the embedding model's tokens; a code-heavy chunk can have more model tokens.
 - The local cluster uses trust authentication on localhost; it is for development only.
+- One `recall fetch` at a time: two at once can leave one's set-aside copy behind (the corpus itself stays whole).
+- An include line inside an included file is left as text (one level, as the build does), so normalizing such a
+  page twice would expand it the second time; no page in the corpus has one.
 
 ## License
 

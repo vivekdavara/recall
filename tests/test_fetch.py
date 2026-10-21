@@ -216,7 +216,24 @@ def test_a_member_named_to_escape_is_never_written(archive: Path, manifest: Mani
     assert not list(tmp_path.rglob("escaped.txt"))
 
 
-@pytest.mark.parametrize("page", sorted(source.EXCLUDED_PAGES))
+# The test's own list: parametrizing over source.EXCLUDED_PAGES would drop a case whenever an exclusion is deleted.
+EXCLUDED = [
+    "_llm-test.md",
+    "external-links.md",
+    "fastapi-people.md",
+    "management.md",
+    "newsletter.md",
+    "release-notes.md",
+    "translation-banner.md",
+]
+
+
+def test_the_exclusions_are_the_designed_ones():
+    assert sorted(source.EXCLUDED_PAGES) == EXCLUDED
+    assert list(source.EXCLUDED_DIRS) == ["reference/"]
+
+
+@pytest.mark.parametrize("page", EXCLUDED)
 def test_every_excluded_page_is_not_kept(page: str):
     assert source.page_of("docs/en/docs/" + page) is None
     assert source.page_of("docs/en/docs/tutorial/" + page) == "tutorial/" + page  # only at the top

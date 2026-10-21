@@ -195,6 +195,45 @@ Yes, on the pg-script job's first run: `start` wrote initdb's log beside the dat
 data directory whose parent didn't exist failed. Here `.scratch/` already existed (the review worktree was in it); a
 fresh checkout doesn't have it. `start` now creates the parent, and the test starts in a parent that doesn't exist.
 
+## The reviews
+
+**How was the day-1 code reviewed?**
+By two agents, one after the other, each on a fixed commit in its own git worktree, asked for a correctness review
+against DESIGN.md: every bug reproduced as a failing test file (`tests/review/`, `tests/review2/`), hypotheses listed
+separately, and mutations (a mechanism removed or weakened) that no test noticed. I reproduced each finding here before
+fixing it, and the second review looked only at what changed since the first, fixes included.
+
+**What was the worst thing the first review found?**
+Normalization found fences on the raw page and handled comments line by line afterwards, so the two disagreed: a
+commented-out code example stayed in the page, and `<!--` written inside inline code (a page explaining comments)
+silently deleted everything up to the next `-->`, headings included. The fix was structural: one pass in document
+order with three states (code, comment or `<style>`/`<script>`, text), whichever starts first winning, as CommonMark
+does, and code spans found over the whole paragraph.
+
+**Why define `includes()` as "the files normalize reads"?**
+The manifest is built from `includes()`, and `load` reads through `normalize()`. When they were two parsers, a page
+with CRLF line ends or a comment on an include line had an include the manifest didn't list, so a corpus that
+`verify` accepted couldn't be loaded. With one definition they can't disagree.
+
+**Why did concurrent migrations fail under REPEATABLE READ, when there's a lock?**
+The advisory lock was the transaction's first statement, and under REPEATABLE READ the snapshot is taken by the first
+statement, before the lock wait: the waiter then ran on a snapshot from before the first migrator committed and
+tried to create the same table. Waiting for a lock only helps if later statements see newer data, which is READ
+COMMITTED, so `lock_read_committed` sets that level first. A database or role default is enough to trigger it.
+
+**Did you disagree with the review anywhere?**
+Once. It expected a raw include outside a fence to become a fenced block, because DESIGN.md said so. The documentation
+build inserts such a file as Markdown, so the rendered page shows it as text; I changed DESIGN.md rather than the code,
+and rewrote that test, saying why in its docstring.
+
+**How do you know your tests test anything?**
+The first review removed or weakened 37 mechanisms one at a time and 22 went unnoticed. I added a test for each and
+then ran every one of those mutants again against the suite (copy aside, mutate, run, restore, compare). 21 of 23
+were caught; the two that weren't (deleting a page exclusion) exposed a test that parametrized over
+`source.EXCLUDED_PAGES` itself, so deleting an exclusion deleted its test case too. The test has its own list now. Two
+of the review's survivors were dead code, which I removed, and one is `load`'s "only files in the manifest" check,
+which `verify` makes unreachable.
+
 ## What went wrong on day 1
 
 **Tell me about a mistake you made.**
