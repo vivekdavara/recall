@@ -91,9 +91,8 @@ def normalize(page_path: str, text: str, read: Reader) -> str:
             if m is None:
                 out.append("")
                 continue
-            closer = None
             rest, closer = _inline(line[m.end() :])
-            out.append(rest)
+            out.append(_escape(rest))
             continue
         probe = _strip_closed_comments(line)
         opener = markdown.fence_opener(line)
@@ -113,19 +112,43 @@ def normalize(page_path: str, text: str, read: Reader) -> str:
                 continue
         marker = _BLOCK_MARKER.match(probe)
         if marker:
-            out.append(_label(marker.group(1), marker.group(2), marker.group(3)))
+            label, closer = _inline(_label(marker.group(1), marker.group(2), marker.group(3)))
+            out.append(_escape(label))
             continue
         if markdown.is_blank(line) or markdown.heading(probe) is not None:
             processed, closer = _inline(line)
             out.append(processed)
             continue
         # A paragraph: this line and the plain text lines after it, so that a code span may wrap onto the next line.
+        # Included lines and the page's own join one paragraph: the included text is read as the page's.
         paragraph = [line]
-        while queue and queue[0][1] == included and _is_paragraph_line(queue[0][0], included):
+        while queue and _is_paragraph_line(*queue[0]):
             paragraph.append(queue.popleft()[0])
         processed, closer = _inline("\n".join(paragraph))
-        out.extend(processed.split("\n"))
+        out.extend(_escape(ln) for ln in processed.split("\n"))
     return "\n".join(out)
+
+
+def _escape(line: str) -> str:
+    """A line of page text that reads as block syntax only because markup was removed from it gets a backslash.
+
+    '<b>#</b> Title' becomes '# Title' and '<!-- x -->```' becomes '```' once their markup goes: the rendered page
+    shows that text, not a heading or a fence. CommonMark's backslash escape keeps it text here and on every later
+    pass, so normalizing again changes nothing. A text line can only be block syntax if markup was removed (or it
+    is an include line inside an included file, which is not expanded: one level).
+    """
+    if not _is_block_line(line):
+        return line
+    indent = len(line) - len(line.lstrip(" \t"))
+    return line[:indent] + "\\" + line[indent:]
+
+
+def _is_block_line(line: str) -> bool:
+    return (
+        markdown.fence_opener(line) is not None
+        or markdown.heading(line) is not None
+        or bool(_BLOCK_MARKER.match(line) or _RAW_INCLUDE.match(line) or _CODE_INCLUDE.match(line))
+    )
 
 
 def _is_paragraph_line(line: str, included: bool) -> bool:
@@ -159,7 +182,9 @@ def _strip_front_matter(text: str) -> str:
     lines = text.split("\n")
     for i in range(1, len(lines)):
         if lines[i] in ("---", "..."):
-            return "\n".join(lines[i + 1 :])
+            rest = "\n".join(lines[i + 1 :])
+            # A '---' first line left now would read as front matter on a second pass: a blank line keeps it a rule.
+            return "\n" + rest if rest.startswith("---") else rest
     return text
 
 
@@ -258,7 +283,10 @@ def _strip_closed_comments(line: str) -> str:
 
 _SPECIAL = re.compile(r"[`<]")
 _COMMENT_END = re.compile(r"-->")
-_RAW_ELEMENT = re.compile(r"<(style|script)\b[^>]*>", re.IGNORECASE)
+# The element's name must end there (<style-guide> is another element), and its attributes hold no '<' or '>', so a
+# '<style' that never closes is given up on at the next '<' rather than rescanned to the end each time.
+_RAW_ELEMENT = re.compile(r"<(style|script)(?=[\s/>])[^<>]*>", re.IGNORECASE)
+_BACKTICKS = re.compile(r"`+")
 
 
 def _inline(text: str) -> tuple[str, re.Pattern[str] | None]:
@@ -277,7 +305,9 @@ def _inline(text: str) -> tuple[str, re.Pattern[str] | None]:
         j = m.start()
         out.append(text[i:j])
         if text[j] == "`":
-            run = len(text[j:]) - len(text[j:].lstrip("`"))
+            backticks = _BACKTICKS.match(text, j)
+            assert backticks is not None  # text[j] is a backtick
+            run = backticks.end() - j
             close = re.compile(rf"(?<!`)`{{{run}}}(?!`)").search(text, j + run)
             # A code span: a run of backticks up to the next run of the same length (CommonMark 6.1); without
             # one, the backticks are literal.

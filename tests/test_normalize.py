@@ -157,11 +157,12 @@ def test_a_page_with_every_extension_normalizes_to_its_golden_file():
 
 
 def test_a_raw_include_outside_a_fence_is_read_as_the_pages_own_text():
-    # Its fence is a fence, its tags go; its own include lines are not expanded (one level, like the build).
+    # Its fence is a fence, its tags go; its own include lines are not expanded (one level, like the build), and
+    # are escaped so that a second pass doesn't expand them either.
     FILES["docs_src/q/part.md"] = "<b>Bold</b> part.\n\n```\n<i>code</i>\n```\n{!../../docs_src/t/item.html!}\n"
     try:
         assert norm("Before\n\n{!../../docs_src/q/part.md!}\nAfter") == (
-            "Before\n\nBold part.\n\n```\n<i>code</i>\n```\n{!../../docs_src/t/item.html!}\nAfter"
+            "Before\n\nBold part.\n\n```\n<i>code</i>\n```\n\\{!../../docs_src/t/item.html!}\nAfter"
         )
     finally:
         del FILES["docs_src/q/part.md"]
@@ -223,3 +224,29 @@ def test_an_empty_level_one_heading_is_not_the_title():
 def test_the_shortest_comments_are_complete():
     # CommonMark 0.31: <!--> and <!---> are comments; what follows them is text.
     assert norm("a <!--> b <!---> c") == "a  b  c"
+
+
+def test_an_include_line_in_a_file_included_in_a_fence_is_code():
+    FILES["docs_src/q/nested.md"] = "{!../../docs_src/t/item.html!}\n"
+    try:
+        assert norm("```\n{!../../docs_src/q/nested.md!}\n```") == "```\n{!../../docs_src/t/item.html!}\n```"
+    finally:
+        del FILES["docs_src/q/nested.md"]
+
+
+def test_a_comment_on_a_marker_line_does_not_hide_the_marker():
+    assert norm("/// tip <!-- why -->\n\nUse it.\n\n///") == "Tip:\n\nUse it.\n\n"
+
+
+def test_a_fence_right_after_a_text_line_is_a_fence():
+    assert norm("Look:\n```\n<b>x</b>\n```") == "Look:\n```\n<b>x</b>\n```"
+
+
+def test_a_byte_order_mark_is_not_text():
+    assert norm("﻿# A { #a }\n") == "# A { #a }\n"
+
+
+def test_what_markup_removal_takes_keeps_its_line_breaks():
+    # A tag over two lines, and a comment left open at a paragraph's end, keep the lines they spanned.
+    assert norm('a <a\nhref="x">b</a> c\nd') == "a \nb c\nd"
+    assert norm("a <!-- open\nb\n\nc\n-->\nd") == "a \n\n\n\n\nd"

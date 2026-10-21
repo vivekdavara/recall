@@ -180,8 +180,8 @@ DESIGN.md said; the documentation build inserts it as Markdown, so Recall now do
 - The token measure approximates the embedding model's tokens; a code-heavy chunk can have more model tokens.
 - The local cluster uses trust authentication on localhost; it is for development only.
 - One `recall fetch` at a time: two at once can leave one's set-aside copy behind (the corpus itself stays whole).
-- An include line inside an included file is left as text (one level, as the build does), so normalizing such a
-  page twice would expand it the second time; no page in the corpus has one.
+- An include line inside an included file is not expanded (one level, as the build does); no page in the corpus
+  has one.
 
 ## License
 

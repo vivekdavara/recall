@@ -84,8 +84,8 @@ inside an HTML comment is part of the comment, and a comment inside a fence is c
 - **In a fenced code block:** the line is code and is kept as it is. The one exception is a raw include
   (`{!path!}`, `{!> path!}`), which FastAPI's pages put inside fences to fill them: the included file's lines become
   the fence's lines. A file with a line of only backticks or tildes, which could close the fence, is refused.
-- **In an HTML comment, or a `<style>` or `<script>` element:** the line is dropped, up to the comment's `-->` or the
-  element's end tag; what follows on that line is page text. (`index.md` has a `<style>` block whose CSS the rendered
+- **In an HTML comment, or a `<style>` or `<script>` element:** the line becomes a blank line, up to the comment's
+  `-->` or the element's end tag (`<style-guide>` is another element); what follows on that line is page text. (`index.md` has a `<style>` block whose CSS the rendered
   page never shows.)
 - **In page text:**
   1. A fence line opens a fenced block.
@@ -100,16 +100,21 @@ inside an HTML comment is part of the comment, and a comment inside a fence is c
      `///` or `////` becomes a blank line, so blocks stay apart.
   4. In everything else, headings included, **HTML comments** and **tags** are removed and the text between tags is
      kept (`<dfn title="...">parsing</dfn>` becomes `parsing`), except inside **code spans**, which are found over
-     the whole paragraph, so a span may wrap onto the next line: `` `<b>` `` and `` `<!--` `` are code. A comment
-     that opens and closes on an include or marker line doesn't hide it. Heading ids (`## Defaults { #defaults }`)
+     the whole paragraph (included lines and the page's own form one paragraph), so a span may wrap onto the next
+     line: `` `<b>` `` and `` `<!--` `` are code. A comment that opens and closes on an include or marker line doesn't
+     hide it, and a marker's label loses its markup like any text. A text line that reads as block syntax only
+     because markup went (`<b>#</b> Title` is `# Title`, `<!-- x -->```` is a fence opener) gets a backslash
+     (CommonMark's escape: `\# Title`), since the rendered page shows that text, not a heading or a fence. Heading ids (`## Defaults { #defaults }`)
      stay in the heading line: the chunker reads them as the section's anchor and leaves them out of the title, so a
      citation can link to `https://fastapi.tiangolo.com/tutorial/query-params/#defaults`.
 
 Includes are written relative to `docs/en/`, the build's root, and must resolve inside the repository; a missing one is
 an error, not a silent gap. `includes(page)` is defined as the files `normalize` reads, so the manifest and the
 normalizer can't disagree about what a page uses. Normalization is deterministic and idempotent: normalizing its own
-output changes nothing (tested on every real page, a golden page and generated pages), except for an include line
-inside an included file, which the first pass leaves as text.
+output changes nothing (tested on every real page, a golden page and generated pages). An include line inside an
+included file is not expanded (one level, as the build does); it is escaped like any text line that reads as block
+syntax, so a second pass doesn't expand it either. Front matter followed by another `---` block leaves a blank line
+first, so the second block isn't read as front matter on a second pass.
 
 ## Chunking
 
