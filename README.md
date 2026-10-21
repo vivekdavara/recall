@@ -111,8 +111,9 @@ updated, 1,503 chunks written, then 125 unchanged. Every stored chunk equals `su
 
 ## Tests
 
-`make check` runs ruff, `mypy --strict` and pytest: 124 tests at `4dfd206`, all passing here. In CI's test job the 7
-real-corpus tests skip (116 passed, 7 skipped at `40a7144`, line and branch coverage 98%), and its corpus job runs them.
+`make check` runs ruff, `mypy --strict` and pytest: 248 tests at `20809ed`, all passing here (7.2 s). In CI's test job
+the real-corpus tests and the cluster script's tests skip (220 passed, 9 skipped at `0777cfe`, line and branch coverage
+99%); the corpus and pg-script jobs run them.
 
 - **Chunking:** one example per rule, and Hypothesis properties for C1 to C8 over random documents built from known
   parts (headings, paragraphs, lists, fences with `#` lines, blank lines and non-closing fence runs inside), so the
@@ -137,8 +138,8 @@ pg-script job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the 
 
 ## Review of day 1
 
-Two review agents, one after the other, each at a fixed commit in its own worktree, worded as correctness reviews,
-saving every bug they reproduced as a failing test (kept in `tests/review/` and `tests/review2/`); each was reproduced
+Three review agents, one after the other, each at a fixed commit in its own worktree, worded as correctness reviews,
+saving every bug they reproduced as a failing test (kept in `tests/review/`, `tests/review2/` and `tests/review3/`); each was reproduced
 here before it was fixed.
 
 - **Review 1** (at `40a7144`, 15 minutes): the chunker held up under 20,000 fuzzed inputs; 23 failing tests elsewhere.
@@ -160,6 +161,12 @@ here before it was fixed.
   `<style` openers took quadratic time; `### ## #` lost its title; the database error printed the URL's password;
   `pg.sh` failed with a relative data directory. It brute-forced the chunk rebalancing over 200,000 random cases and
   found it correct. Its surviving mutants got tests, each run again as a mutant.
+- **Review 3** (at `0777cfe`, 12 minutes, only review 2's fixes): 10 failing tests, 7 bugs, again in the fixes. Output
+  starting with `---` was read as front matter by a second pass (the guard looked at the page, not the output); an
+  include line in a file included inside a fence was expanded by a second pass (such a file is now refused); my
+  linear-time `<style>` fix stopped dropping an element whose attribute holds `<`; a code span couldn't continue from
+  the page into an included file; and the database message could still show part of a password (an unescaped `@`,
+  an unparseable URL's traceback) or run to two lines.
 
 One judgement call went against the review: it expected a raw include outside a fence to become a fenced block, as
 DESIGN.md said; the documentation build inserts it as Markdown, so Recall now does too and DESIGN.md says so.

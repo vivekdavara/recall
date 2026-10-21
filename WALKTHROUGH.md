@@ -198,10 +198,10 @@ fresh checkout doesn't have it. `start` now creates the parent, and the test sta
 ## The reviews
 
 **How was the day-1 code reviewed?**
-By two agents, one after the other, each on a fixed commit in its own git worktree, asked for a correctness review
-against DESIGN.md: every bug reproduced as a failing test file (`tests/review/`, `tests/review2/`), hypotheses listed
+By three agents, one after the other, each on a fixed commit in its own git worktree, asked for a correctness review
+against DESIGN.md: every bug reproduced as a failing test file (`tests/review/`, `tests/review2/`, `tests/review3/`), hypotheses listed
 separately, and mutations (a mechanism removed or weakened) that no test noticed. I reproduced each finding here before
-fixing it, and the second review looked only at what changed since the first, fixes included.
+fixing it; each later review looked only at what changed since the one before, fixes included.
 
 **What was the worst thing the first review found?**
 Normalization found fences on the raw page and handled comments line by line afterwards, so the two disagreed: a
@@ -230,6 +230,11 @@ error message printed the URL with its password. `<style-guide>` was taken for `
 openers took quadratic time. And `pg.sh` failed with a relative data directory, because the server resolves the socket
 directory against its data directory. It also brute-forced the chunk rebalancing over 200,000 random cases and found
 it correct.
+
+**And a third review?**
+Only on the second review's fixes, and it found seven more bugs in them: my front-matter guard looked at the page
+rather than the output, my linear-time fix for `<style>` dropped too little, and my password redaction missed an
+unescaped `@` and an unparseable URL's traceback. Each fix of a finding is new code, so I review it like new code.
 
 **Did you disagree with the review anywhere?**
 Once. It expected a raw include outside a fence to become a fenced block, because DESIGN.md said so. The documentation
