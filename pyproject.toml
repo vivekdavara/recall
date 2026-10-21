@@ -35,7 +35,8 @@ branch = true
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = [".scratch"]
+# The golden files are expected output: formatting their code blocks would change the expectation.
+extend-exclude = [".scratch", "tests/golden"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
