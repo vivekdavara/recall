@@ -13,6 +13,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 bin=${PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}
 port=${RECALL_PG_PORT:-5544}
 data=${RECALL_PG_DATA:-$root/.pgdata}
+# Absolute: the server resolves unix_socket_directories against its data directory, not where it was started.
+case "$data" in /*) ;; *) data="$PWD/$data" ;; esac
 
 # Without a valid LC_ALL, macOS's postmaster can become multithreaded during startup and refuse to start.
 export LC_ALL=${LC_ALL:-en_US.UTF-8}
@@ -33,8 +35,11 @@ start() {
     if running; then
         state="already running"
     else
-        pg pg_ctl -D "$data" -l "$data/log" -w \
-            -o "-p $port -c listen_addresses=localhost -c unix_socket_directories='$data'" start >/dev/null
+        if ! pg pg_ctl -D "$data" -l "$data/log" -w \
+            -o "-p $port -c listen_addresses=localhost -c unix_socket_directories='$data'" start >/dev/null; then
+            tail -5 "$data/log" >&2  # why it didn't start (a socket path over 103 bytes, say)
+            exit 1
+        fi
         state="started"
     fi
     for db in recall recall_test; do

@@ -33,8 +33,12 @@ def free_port() -> int:
 def cluster() -> Iterator[tuple[dict[str, str], Path, int]]:
     # Under the repository, not the system temp directory: the socket lives in the data directory, and a Unix
     # socket path must be short (about 100 bytes on macOS); pytest's tmp_path is too long for it.
-    # A parent directory that doesn't exist yet, as in a fresh checkout (CI caught start failing on one).
-    data = ROOT / ".scratch" / f"pg-{uuid.uuid4().hex[:8]}" / "data"
+    # A parent directory that doesn't exist yet, as in a fresh checkout (CI caught start failing on one). Short:
+    # the server's socket is <data>/.s.PGSQL.<port>, and a Unix socket path may be at most 103 bytes on macOS.
+    data = ROOT / ".scratch" / f"pg{uuid.uuid4().hex[:4]}" / "d"
+    socket_path = f"{data}/.s.PGSQL.{65535}"
+    if len(socket_path.encode()) > 103:
+        pytest.fail(f"the checkout is too deep for a Unix socket path here ({len(socket_path.encode())} bytes)")
     port = free_port()
     env = {**os.environ, "PG_BIN": PG_BIN, "RECALL_PG_PORT": str(port), "RECALL_PG_DATA": str(data)}
     try:
