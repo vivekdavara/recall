@@ -104,3 +104,12 @@ def test_an_unknown_command_prints_the_usage(cluster: tuple[dict[str, str], Path
     env, _, _ = cluster
     r = run(env, "launch")
     assert r.returncode == 2 and r.stderr.startswith("usage:")
+
+
+def test_a_start_that_fails_says_why(cluster: tuple[dict[str, str], Path, int]):
+    # A data directory too deep for its socket path (over 103 bytes): initdb works, the server can't start.
+    env, data, _ = cluster
+    deep = data.parent / ("x" * 60) / "d"
+    r = run({**env, "RECALL_PG_DATA": str(deep)}, "start")
+    assert r.returncode == 1
+    assert "too long" in r.stderr, r.stderr  # the server log's own reason, not just "Examine the log output."
