@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from recall.corpus.normalize import NormalizeError, include_path, includes, normalize, title
@@ -139,3 +141,16 @@ def test_crlf_becomes_lf_and_nul_is_refused():
 def test_title_is_the_first_level_one_heading_outside_code():
     assert title("```\n# not this\n```\n## Sub\n# Query Parameters { #q }\n", "x.md") == "Query Parameters"
     assert title("no heading", "x.md") == "x.md"
+
+
+def test_a_page_with_every_extension_normalizes_to_its_golden_file():
+    # tests/golden/page.md is synthetic; page.normalized.md was written by normalize and checked by eye.
+    # Regenerate it only for a deliberate change, and read the diff.
+    root = Path(__file__).parent / "golden"
+
+    def read_golden(path: str) -> str:
+        return (root / path).read_text(encoding="utf-8")
+
+    out = normalize("golden/page.md", read_golden("page.md"), read_golden)
+    assert out == read_golden("page.normalized.md")
+    assert normalize("golden/page.md", out, read_golden) == out
