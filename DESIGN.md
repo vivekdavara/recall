@@ -144,11 +144,15 @@ Day 1's schema (`src/recall/migrations/001_documents_and_chunks.sql`):
   the ingest tests rather than a trigger.
 - `schema_migrations`: which migrations ran, so `recall migrate` applies each file once, in order, in a transaction.
 
-**Ingest** (`recall ingest`) is idempotent. For each document, in one transaction: if a row with the same path and
-the same content hash exists, nothing changes; otherwise the document row is inserted or updated and its chunks are
-replaced. Pages that are no longer in the corpus are deleted, with their chunks. Running ingest twice leaves the same
-rows, and the second run reports every document unchanged. The same chunk settings are recorded with the corpus
-(`corpus_settings`), so changing `max_tokens` re-chunks every document rather than mixing sizes.
+**Ingest** (`recall ingest`) makes the stored corpus exactly the loaded one, in one transaction, so a reader sees the
+old corpus or the new one and never a mix. For each document: if a row with the same path, content hash, title and URL
+exists and the chunks were made with the same settings, nothing changes; otherwise the document row is inserted or
+updated and its chunks are replaced. Documents that are no longer in the corpus are deleted, with their chunks. Running
+ingest twice leaves the same rows (the same chunk ids), and the second run reports every document unchanged. The
+settings the chunks were made with are stored in `corpus_settings`: the source commit, `max_tokens`, and
+`CHUNKER_VERSION` (raised whenever a change to the chunker can change a chunk); when any of them differs, every
+document is re-chunked rather than mixing chunk sizes. Two ingests queue on an advisory lock, so they never interleave;
+the second sees what the first committed. A failure part way (a row PostgreSQL refuses) rolls the whole ingest back.
 
 Day 2 adds (`002_...`): `chunks.embedding vector(384)` with an HNSW index (cosine distance), a generated `tsvector`
 column with a GIN index, and the model name and dimension in `corpus_settings`, so vectors from two models never mix.

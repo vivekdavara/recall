@@ -4,10 +4,11 @@
 -- It goes in public, so that a test schema can be dropped without dropping the extension.
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
--- The settings the stored chunks were made with: one row. Ingest re-chunks every document when they change.
+-- What the stored chunks were made from and with: one row. Ingest re-chunks every document when any of it changes.
 CREATE TABLE corpus_settings (
     id boolean PRIMARY KEY DEFAULT true CHECK (id),
     source_commit text NOT NULL CHECK (source_commit ~ '^[0-9a-f]{40}$'),
+    chunker_version integer NOT NULL CHECK (chunker_version >= 1),
     max_tokens integer NOT NULL CHECK (max_tokens >= 1),
     updated_at timestamptz NOT NULL DEFAULT now()
 );

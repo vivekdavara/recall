@@ -14,6 +14,9 @@ from recall import markdown
 
 DEFAULT_MAX_TOKENS = 256
 
+# Raise this whenever a change here can change any chunk: ingest then re-chunks every stored document.
+CHUNKER_VERSION = 1
+
 # A token is a run of word characters or one other non-whitespace character. Every non-whitespace character is in
 # exactly one token and no token contains whitespace, so cutting text at whitespace or between two tokens splits
 # its count exactly: count(a + b) == count(a) + count(b). The packing below relies on that to keep C4 exact.
