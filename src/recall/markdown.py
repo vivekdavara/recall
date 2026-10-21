@@ -15,9 +15,12 @@ from dataclasses import dataclass
 # contain a backtick (CommonMark 4.5), so "``` x ` y" is a paragraph, not a fence.
 _FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})(.*)$")
 
-# An ATX heading: up to three spaces, one to six '#', then a space and the title, or nothing. An optional closing
-# run of '#' (after a space) is not part of the title.
-_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
+# An ATX heading: up to three spaces, one to six '#', then a space and the content, or nothing. The content then
+# loses its closing sequence as commonmark.js does: content that is one run of '#' is empty ('### ###'), otherwise a
+# trailing run of '#' after a space goes ('### ## #' has the title '##').
+_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*))?$")
+_ONLY_CLOSING = re.compile(r"^[ \t]*#+[ \t]*$")
+_CLOSING = re.compile(r"[ \t]+#+[ \t]*$")
 
 # A heading id in attribute-list syntax at the end of a title: "Defaults { #defaults }".
 _HEADING_ID = re.compile(r"[ \t]*\{[ \t]*#([A-Za-z0-9_:.-]+)[ \t]*\}$")
@@ -79,9 +82,7 @@ def heading(line: str) -> Heading | None:
     m = _HEADING.match(line)
     if not m:
         return None
-    title = m.group(2) or ""
-    if set(title) == {"#"}:
-        title = ""  # "### ###" is only a closing sequence: an empty heading, as in CommonMark
+    title = _CLOSING.sub("", _ONLY_CLOSING.sub("", m.group(2) or ""))
     anchor = None
     a = _HEADING_ID.search(title)
     if a:
