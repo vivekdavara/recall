@@ -43,26 +43,35 @@ def scan(text: str) -> list[Line]:
     """Split text into lines at '\\n' and mark the lines of each fenced code block."""
     lines: list[Line] = []
     pos = 0
-    fence_char = ""
-    fence_len = 0
+    fence: tuple[str, int] | None = None
     fence_index = -1
     for raw in text.split("\n"):
         start, end = pos, pos + len(raw)
         pos = end + 1
-        if not fence_char:
-            m = _FENCE_OPEN.match(raw)
-            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
-                fence_char, fence_len = m.group(1)[0], len(m.group(1))
+        if fence is None:
+            fence = fence_opener(raw)
+            if fence is not None:
                 fence_index += 1
-                lines.append(Line(start, end, fence_index))
-            else:
-                lines.append(Line(start, end, None))
+            lines.append(Line(start, end, fence_index if fence is not None else None))
             continue
         lines.append(Line(start, end, fence_index))
-        stripped = raw.strip()
-        if len(stripped) >= fence_len and set(stripped) == {fence_char}:
-            fence_char = ""
+        if closes(raw, fence):
+            fence = None
     return lines
+
+
+def fence_opener(line: str) -> tuple[str, int] | None:
+    """The fence character and length if this line opens a fenced code block (outside one), else None."""
+    m = _FENCE_OPEN.match(line)
+    if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+        return m.group(1)[0], len(m.group(1))
+    return None
+
+
+def closes(line: str, fence: tuple[str, int]) -> bool:
+    """Whether this line closes the fenced code block that `fence` (from fence_opener) opened."""
+    stripped = line.strip()
+    return len(stripped) >= fence[1] and set(stripped) == {fence[0]}
 
 
 def heading(line: str) -> Heading | None:
@@ -71,6 +80,8 @@ def heading(line: str) -> Heading | None:
     if not m:
         return None
     title = m.group(2) or ""
+    if set(title) == {"#"}:
+        title = ""  # "### ###" is only a closing sequence: an empty heading, as in CommonMark
     anchor = None
     a = _HEADING_ID.search(title)
     if a:
