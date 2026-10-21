@@ -71,6 +71,7 @@ scripts/pg.sh start            # the local cluster on port 5544: databases recal
 .venv/bin/recall fetch         # FastAPI 0.157.0's docs into data/corpus (about 18 MB downloaded, 421 files kept)
 .venv/bin/recall verify        # check data/corpus against the manifest
 .venv/bin/recall stats         # chunk the corpus and print its sizes
+.venv/bin/recall show tutorial/query-params.md   # one page's chunks, with spans and heading paths
 .venv/bin/recall ingest        # load it into the recall database (runs the migrations first)
 make check                     # ruff, mypy --strict, and the tests (they use recall_test)
 scripts/pg.sh stop
@@ -118,8 +119,14 @@ real-corpus tests skip (116 passed, 7 skipped at `40a7144`, line and branch cove
   left, and chunks within the invariants at two sizes; the manifest holds exactly what the pages use; a pin of the
   chunk count for this chunker version. Skipped without a fetched corpus, required in CI's corpus job.
 
-CI (GitHub Actions) has two jobs: lint, types and tests against a `pgvector/pgvector:pg17` service container; and the
-corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests.
+- **Normalization properties:** generated pages keep their own code unchanged, get one block per include, keep every
+  visible word, have no build syntax, tags or comments left outside code, and normalize idempotently.
+- **The local cluster** (`tests/test_pg_script.py`): `scripts/pg.sh` start, status, url, psql, stop, a restart that
+  keeps the data, and reset (which leaves a directory that isn't a cluster alone), on a throwaway cluster.
+
+CI (GitHub Actions) has three jobs: lint, types and tests against a `pgvector/pgvector:pg17` service container; the
+corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests; and the
+pg-script job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test.
 
 ## Design decisions
 

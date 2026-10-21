@@ -139,10 +139,14 @@ Day 1's schema (`src/recall/migrations/001_documents_and_chunks.sql`):
 - `documents`: `id`, `path` (unique, e.g. `tutorial/query-params.md`), `title`, `url`, `content` (the normalized
   text), `content_sha256`, `ingested_at`.
 - `chunks`: `id`, `document_id` (cascade delete), `ordinal` (unique per document), `heading_path text[]`, `anchor`,
-  `start_offset`, `end_offset`, `content`, `token_count`. Check constraints mirror C1 to C4 where SQL can see them:
-  `0 <= start_offset < end_offset`, `token_count >= 1`, and `content = substr(document.content, ...)` is checked by
-  the ingest tests rather than a trigger.
-- `schema_migrations`: which migrations ran, so `recall migrate` applies each file once, in order, in a transaction.
+  `start_offset`, `end_offset`, `content`, `token_count`. Check constraints mirror C1 and C4 where SQL can see them
+  within a row: `0 <= start_offset < end_offset`, `char_length(content) = end_offset - start_offset`, and
+  `token_count >= 1`. That `content` is the right slice of its document (`substr(document.content, start + 1, end -
+  start)`) needs the document's row, so the ingest tests check it in SQL rather than a trigger.
+- `corpus_settings`: one row, what the stored chunks were made from and with (source commit, chunker version,
+  `max_tokens`).
+- `schema_migrations`: which migrations ran, so `recall migrate` applies each file once, in order, each in its own
+  transaction, under an advisory lock so that concurrent migrators queue.
 
 **Ingest** (`recall ingest`) makes the stored corpus exactly the loaded one, in one transaction, so a reader sees the
 old corpus or the new one and never a mix. For each document: if a row with the same path, content hash, title and URL
@@ -161,10 +165,14 @@ column with a GIN index, and the model name and dimension in `corpus_settings`, 
 
 `scripts/pg.sh` runs a project-local PostgreSQL 17 cluster on port 5544 with its data in `.pgdata/` (gitignored):
 `start` (runs `initdb` the first time, then `pg_ctl start`; listens on localhost only, trust authentication, so it
-must not be exposed), `stop`, `status`, `url` (prints the connection URL), `psql`, and `reset` (stop and delete
-`.pgdata`). It creates the `recall` database for the app and the `recall_test` database for the tests, and checks
-that the `vector` extension can be created before saying it started. In CI the same role is played by the
-`pgvector/pgvector:pg17` service container.
+must not be exposed), `stop`, `status` (exit 3 when stopped), `url` (prints the connection URL), `psql`, and `reset`
+(stop and delete the data directory, only if it is one: `PG_VERSION` must be there). It creates the `recall` database
+for the app and the `recall_test` database for the tests, and checks that the `vector` extension is available before
+saying it started. `initdb` uses the builtin `C.UTF-8` locale, so text sorts by code point; the server gets a valid
+`LC_ALL`, without which PostgreSQL 17 on macOS refuses to start ("postmaster became multithreaded during startup").
+`PG_BIN`, `RECALL_PG_PORT` and `RECALL_PG_DATA` override the binaries, the port and the data directory, which is how
+the script's own test runs a throwaway cluster. In CI the database for the tests is the `pgvector/pgvector:pg17`
+service container, initialised with the same locale.
 
 Settings come from the environment: `RECALL_DATABASE_URL` (default `postgresql://localhost:5544/recall`),
 `RECALL_TEST_DATABASE_URL` (default `.../recall_test`), `RECALL_DATA_DIR` (default `./data`).
@@ -216,12 +224,22 @@ flowchart LR
 
 ## Testing
 
-- **Chunking:** example tests for each rule and property tests (Hypothesis) that generate random Markdown (headings,
-  paragraphs, lists, fenced code with `#` lines and blank lines inside, very long lines and words) and check C1 to C7.
-- **Normalization:** one test per rule, idempotence, and a golden file for a page that uses every extension.
-- **Fetch:** tests build small tar archives in a temporary directory (with and without the pax commit header, with a
-  tampered file, with a missing file, with a path that escapes the target) and run `fetch` on them; no network.
+- **Chunking:** example tests for each rule and property tests (Hypothesis) that generate random Markdown from known
+  parts (headings, paragraphs, lists, fenced code with `#` lines, blank lines and non-closing fence runs inside, very
+  long lines and runs) and check C1 to C7 against what the generator knows, not against the chunker's own parse.
+- **Normalization:** one test per rule and error case; a golden file for a synthetic page that uses every extension;
+  property tests over generated pages (the page's own code unchanged, one block per include, no build syntax, tags
+  or comments left outside code, every visible word kept, idempotent).
+- **Fetch:** tests build small tar archives in a temporary directory (another commit or none, a changed file, a
+  missing file, a symlink, duplicate members, a member outside the top directory, unsafe manifest paths, an archive
+  over the size limit) and run `fetch` on them; no network.
 - **Database:** migrations, ingest and its idempotence against a real PostgreSQL (the local cluster, or CI's service
   container); each test gets its own schema, dropped afterwards.
-- **CI:** lint (ruff), types (mypy), tests with the pgvector service container, and a corpus job that fetches the real
-  pinned archive, checks it against the manifest, and chunks the whole corpus with the invariants checked.
+- **The real corpus** (`tests/test_real_corpus.py`): every kept page loads, normalizes idempotently, has no build
+  syntax left and chunks within the invariants at two sizes; the manifest holds exactly what the pages use; a pin of
+  the corpus's chunk count for the current `CHUNKER_VERSION`. Skipped when no corpus has been fetched.
+- **The local cluster** (`tests/test_pg_script.py`): `scripts/pg.sh` end to end on a throwaway cluster.
+- **CI**, three jobs: lint (ruff), types (mypy, strict) and the tests with the pgvector service container; a corpus
+  job that fetches the real pinned archive from GitHub, checks it against the manifest and runs the real-corpus tests;
+  and a pg-script job that installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test. The last
+  two set an environment variable that turns their tests' skips into failures.
