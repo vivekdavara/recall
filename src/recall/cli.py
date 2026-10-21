@@ -162,7 +162,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"recall: {e}", file=sys.stderr)
         return 1
     except psycopg.OperationalError as e:
-        print(f"recall: can't use the database ({db.database_url()}): {e}".rstrip(), file=sys.stderr)
+        # One line (psycopg's message has one per address it tried), and the URL without its password.
+        reason = " ".join(str(e).split())
+        print(f"recall: can't use the database {db.describe_url(db.database_url())}: {reason}", file=sys.stderr)
         return 1
     return code
 

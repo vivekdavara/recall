@@ -8,6 +8,7 @@ from importlib import resources
 from importlib.resources.abc import Traversable
 
 import psycopg
+from psycopg import conninfo
 
 DEFAULT_DATABASE_URL = "postgresql://localhost:5544/recall"
 
@@ -18,6 +19,17 @@ _MIGRATION_NAME = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
 
 def database_url() -> str:
     return os.environ.get("RECALL_DATABASE_URL", DEFAULT_DATABASE_URL)
+
+
+def describe_url(url: str) -> str:
+    """The URL's user, host, port and database, for messages: never its password."""
+    try:
+        parts = conninfo.conninfo_to_dict(url)
+    except psycopg.ProgrammingError:
+        return "(an unreadable RECALL_DATABASE_URL)"
+    user = f"{parts['user']}@" if parts.get("user") else ""
+    port = f":{parts['port']}" if parts.get("port") else ""
+    return f"{user}{parts.get('host', '')}{port}/{parts.get('dbname', '')}"
 
 
 def connect(url: str | None = None, application_name: str = "recall") -> psycopg.Connection:

@@ -132,7 +132,8 @@ def test_a_database_that_isnt_there_is_one_line_not_a_traceback(
         port = s.getsockname()[1]
     monkeypatch.setenv("RECALL_DATABASE_URL", f"postgresql://localhost:{port}/recall?connect_timeout=2")
     assert cli.main(["migrate"]) == 1
-    assert capsys.readouterr().err.startswith("recall: can't use the database")
+    err = capsys.readouterr().err
+    assert err.startswith(f"recall: can't use the database localhost:{port}/recall: ") and err.count("\n") == 1
 
 
 def test_a_page_that_cant_be_normalized_is_one_line(

@@ -138,3 +138,16 @@ def test_the_settings_row_holds_a_full_lowercase_commit_id(conn: psycopg.Connect
         conn.execute(
             "INSERT INTO corpus_settings (source_commit, chunker_version, max_tokens) VALUES (%s, 1, 1)", (commit,)
         )
+
+
+@pytest.mark.parametrize(
+    ("url", "described"),
+    [
+        ("postgresql://alice:s3cret@db.example:6543/recall?sslmode=require", "alice@db.example:6543/recall"),
+        ("postgresql://localhost:5544/recall", "localhost:5544/recall"),
+        ("host=h port=1 dbname=d user=u password=p", "u@h:1/d"),
+        ("postgresql://[bad", "(an unreadable RECALL_DATABASE_URL)"),
+    ],
+)
+def test_a_database_url_is_described_without_its_password(url: str, described: str):
+    assert db.describe_url(url) == described
