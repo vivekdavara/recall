@@ -98,7 +98,7 @@ exact without running a tokenizer. Day 2 measures how it compares with the embed
 
 **Why 256?**
 A starting point that fits small embedding models' input (typically 256 to 512 word pieces) with room for the title
-and heading path. It gives p50 142 and p95 253 tokens a chunk on this corpus. Day 2 checks it against the real
+and heading path. It gives p50 147 and p95 250 tokens a chunk on this corpus (chunker version 2). Day 2 checks it against the real
 tokenizer, and day 5's ablation can vary it.
 
 **Why no overlap?**
@@ -220,6 +220,16 @@ The advisory lock was the transaction's first statement, and under REPEATABLE RE
 statement, before the lock wait: the waiter then ran on a snapshot from before the first migrator committed and
 tried to create the same table. Waiting for a lock only helps if later statements see newer data, which is READ
 COMMITTED, so `lock_read_committed` sets that level first. A database or role default is enough to trigger it.
+
+**What did the second review find?**
+Bugs in my fixes of the first review's findings, as second reviews have on every project so far. My fix for `# #`
+emptied any title made only of `#` (`### ## #` should keep `##`). The one-pass normalizer could invent structure:
+removing markup from `<b></b>```` left a fence opener that turned the rest of the page into code, and `<b>#</b> Title`
+became a heading. Such lines now get a backslash escape, which also made normalization idempotent again. My database
+error message printed the URL with its password. `<style-guide>` was taken for `<style>`, and many unclosed `<style`
+openers took quadratic time. And `pg.sh` failed with a relative data directory, because the server resolves the socket
+directory against its data directory. It also brute-forced the chunk rebalancing over 200,000 random cases and found
+it correct.
 
 **Did you disagree with the review anywhere?**
 Once. It expected a raw include outside a fence to become a fenced block, because DESIGN.md said so. The documentation

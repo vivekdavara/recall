@@ -153,7 +153,13 @@ here before it was fixed.
   added tests and ran each mutant again (with the fixes' own two mechanisms, 23 mutants): 21 caught at first, and the
   two that survived (deleting a page exclusion) showed my exclusion test iterated over the list it was testing. It
   has its own list now, and both are caught.
-- **Review 2** (at `0e87c41`): on the fixes and everything else since review 1.
+- **Review 2** (at `0e87c41`, 12 minutes, on everything since review 1, its fixes included): 20 failing tests, 11 bugs,
+  most in those fixes. Removing markup could invent structure (`<b></b>```` became a fence opener that turned the
+  rest of the page into code; `<b>#</b> Title` a heading), now escaped with a backslash; normalization wasn't
+  idempotent for markup in admonition labels or before markers; `<style-guide>` was read as `<style>`; many unclosed
+  `<style` openers took quadratic time; `### ## #` lost its title; the database error printed the URL's password;
+  `pg.sh` failed with a relative data directory. It brute-forced the chunk rebalancing over 200,000 random cases and
+  found it correct. Its surviving mutants got tests, each run again as a mutant.
 
 One judgement call went against the review: it expected a raw include outside a fence to become a fenced block, as
 DESIGN.md said; the documentation build inserts it as Markdown, so Recall now does too and DESIGN.md says so.
@@ -179,6 +185,9 @@ DESIGN.md said; the documentation build inserts it as Markdown, so Recall now do
 - Normalization is written for FastAPI's documentation build; another corpus needs its own rules.
 - The token measure approximates the embedding model's tokens; a code-heavy chunk can have more model tokens.
 - The local cluster uses trust authentication on localhost; it is for development only.
+- `<!-- c --># Title` is a heading after normalization (CommonMark would make the whole line an HTML block), and
+  front matter is any `---` block at the start, without checking it is YAML.
+- If pgvector is missing, `pg.sh start` fails but leaves the server running (`pg.sh stop` stops it).
 - One `recall fetch` at a time: two at once can leave one's set-aside copy behind (the corpus itself stays whole).
 - An include line inside an included file is not expanded (one level, as the build does); no page in the corpus
   has one.
