@@ -120,13 +120,26 @@ def normalize(page_path: str, text: str, read: Reader) -> str:
             out.append(processed)
             continue
         # A paragraph: this line and the plain text lines after it, so that a code span may wrap onto the next line.
-        # Included lines and the page's own join one paragraph: the included text is read as the page's.
+        # Included lines and the page's own join one paragraph: the included text is read as the page's, so a
+        # raw include met here is expanded in place and its lines may continue the paragraph.
         paragraph = [line]
-        while queue and _is_paragraph_line(*queue[0]):
+        while queue:
+            nxt, nxt_included = queue[0]
+            raw = None if nxt_included else _RAW_INCLUDE.match(_strip_closed_comments(nxt))
+            if raw:
+                queue.popleft()
+                lines = _raw_include(page_path, raw.group(1), raw.group(2), read, inside_fence=False)
+                queue.extendleft((ln, True) for ln in reversed(lines))
+                continue
+            if not _is_paragraph_line(nxt, nxt_included):
+                break
             paragraph.append(queue.popleft()[0])
         processed, closer = _inline("\n".join(paragraph))
         out.extend(_escape(ln) for ln in processed.split("\n"))
-    return "\n".join(out)
+    result = "\n".join(out)
+    # Output that starts with something front matter-shaped (a rule after the real front matter, markup that
+    # became '---', an included file's first lines) would lose it on a second pass: a blank line first keeps it.
+    return "\n" + result if _strip_front_matter(result) != result else result
 
 
 def _escape(line: str) -> str:
@@ -182,9 +195,7 @@ def _strip_front_matter(text: str) -> str:
     lines = text.split("\n")
     for i in range(1, len(lines)):
         if lines[i] in ("---", "..."):
-            rest = "\n".join(lines[i + 1 :])
-            # A '---' first line left now would read as front matter on a second pass: a blank line keeps it a rule.
-            return "\n" + rest if rest.startswith("---") else rest
+            return "\n".join(lines[i + 1 :])
     return text
 
 
@@ -241,10 +252,13 @@ def _raw_include(page_path: str, indent: str, target: str, read: Reader, inside_
     if inside_fence:
         # A line of only backticks or only tildes could close the fence the include sits in; refuse rather than
         # let an included file change the page's structure.
+        # An include line in it would stay as code here, and be expanded by a second pass: refused too.
         for ln in lines:
             stripped = ln.strip()
             if len(stripped) >= 3 and set(stripped) in ({"`"}, {"~"}):
                 raise NormalizeError(f"{page_path}: included {target} has a line that could close its fence")
+            if _RAW_INCLUDE.match(ln):
+                raise NormalizeError(f"{page_path}: included {target} has an include line inside a fence")
     return [indent + ln if ln else ln for ln in lines]
 
 
@@ -283,9 +297,9 @@ def _strip_closed_comments(line: str) -> str:
 
 _SPECIAL = re.compile(r"[`<]")
 _COMMENT_END = re.compile(r"-->")
-# The element's name must end there (<style-guide> is another element), and its attributes hold no '<' or '>', so a
-# '<style' that never closes is given up on at the next '<' rather than rescanned to the end each time.
-_RAW_ELEMENT = re.compile(r"<(style|script)(?=[\s/>])[^<>]*>", re.IGNORECASE)
+# The element's name must end there (<style-guide> is another element). Its end tag is searched for straight from
+# the name, whatever its attributes hold (CommonMark's HTML block 1): one search, so no rescanning.
+_RAW_ELEMENT = re.compile(r"<(style|script)(?=[\s/>]|$)", re.IGNORECASE)
 _BACKTICKS = re.compile(r"`+")
 
 

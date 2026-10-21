@@ -226,10 +226,12 @@ def test_the_shortest_comments_are_complete():
     assert norm("a <!--> b <!---> c") == "a  b  c"
 
 
-def test_an_include_line_in_a_file_included_in_a_fence_is_code():
+def test_an_include_line_in_a_file_included_in_a_fence_is_refused():
+    # Kept as code it would be expanded by a second pass (review 3), so it is refused like a fence-closing line.
     FILES["docs_src/q/nested.md"] = "{!../../docs_src/t/item.html!}\n"
     try:
-        assert norm("```\n{!../../docs_src/q/nested.md!}\n```") == "```\n{!../../docs_src/t/item.html!}\n```"
+        with pytest.raises(NormalizeError, match="include line inside a fence"):
+            norm("```\n{!../../docs_src/q/nested.md!}\n```")
     finally:
         del FILES["docs_src/q/nested.md"]
 
@@ -250,3 +252,21 @@ def test_what_markup_removal_takes_keeps_its_line_breaks():
     # A tag over two lines, and a comment left open at a paragraph's end, keep the lines they spanned.
     assert norm('a <a\nhref="x">b</a> c\nd') == "a \nb c\nd"
     assert norm("a <!-- open\nb\n\nc\n-->\nd") == "a \n\n\n\n\nd"
+
+
+def test_a_fence_opener_left_after_a_comment_spanning_paragraphs_is_escaped():
+    assert norm("<!-- a\n\nb -->```\n# Real") == "\n\n\\```\n# Real"
+
+
+def test_a_tab_label_that_reads_as_a_heading_is_escaped():
+    assert norm("//// tab | <b>#</b> x\n\nbody\n\n////") == "\\# x:\n\nbody\n\n"
+
+
+def test_the_escape_goes_after_the_indentation():
+    assert norm(" <b>#</b> x") == " \\# x"
+    assert norm("\t<b>#</b> x") == "\t# x"  # a tab before '#' isn't a heading's indent, so nothing to escape
+
+
+def test_a_pages_own_include_right_after_a_text_line_is_expanded():
+    assert norm("Text\n{!../../docs_src/t/item.html!}\nmore") == "Text\n\n{{ id }}\n\nmore"
+    assert norm("Text\n{* ../../docs_src/q/crlf.py *}") == "Text\n```python\na = 1\nb = 2\n```"

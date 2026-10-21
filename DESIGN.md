@@ -85,7 +85,8 @@ inside an HTML comment is part of the comment, and a comment inside a fence is c
   (`{!path!}`, `{!> path!}`), which FastAPI's pages put inside fences to fill them: the included file's lines become
   the fence's lines. A file with a line of only backticks or tildes, which could close the fence, is refused.
 - **In an HTML comment, or a `<style>` or `<script>` element:** the line becomes a blank line, up to the comment's
-  `-->` or the element's end tag (`<style-guide>` is another element); what follows on that line is page text. (`index.md` has a `<style>` block whose CSS the rendered
+  `-->` or the element's end tag, whatever its attributes hold (`<style-guide>` is another element); what follows on
+  that line is page text. (`index.md` has a `<style>` block whose CSS the rendered
   page never shows.)
 - **In page text:**
   1. A fence line opens a fenced block.
@@ -100,7 +101,8 @@ inside an HTML comment is part of the comment, and a comment inside a fence is c
      `///` or `////` becomes a blank line, so blocks stay apart.
   4. In everything else, headings included, **HTML comments** and **tags** are removed and the text between tags is
      kept (`<dfn title="...">parsing</dfn>` becomes `parsing`), except inside **code spans**, which are found over
-     the whole paragraph (included lines and the page's own form one paragraph), so a span may wrap onto the next
+     the whole paragraph (included lines and the page's own form one paragraph, in either order), so a span may wrap
+     onto the next
      line: `` `<b>` `` and `` `<!--` `` are code. A comment that opens and closes on an include or marker line doesn't
      hide it, and a marker's label loses its markup like any text. A text line that reads as block syntax only
      because markup went (`<b>#</b> Title` is `# Title`, `<!-- x -->```` is a fence opener) gets a backslash
@@ -113,8 +115,9 @@ an error, not a silent gap. `includes(page)` is defined as the files `normalize`
 normalizer can't disagree about what a page uses. Normalization is deterministic and idempotent: normalizing its own
 output changes nothing (tested on every real page, a golden page and generated pages). An include line inside an
 included file is not expanded (one level, as the build does); it is escaped like any text line that reads as block
-syntax, so a second pass doesn't expand it either. Front matter followed by another `---` block leaves a blank line
-first, so the second block isn't read as front matter on a second pass.
+syntax, so a second pass doesn't expand it either, and a file included inside a fence may not hold one at all (as
+code it would stay unescaped). Output that would start with front matter (a rule after the real front matter, an
+included file's first lines) gets a blank line first, so a second pass keeps it.
 
 ## Chunking
 
