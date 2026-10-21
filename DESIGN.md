@@ -25,9 +25,9 @@ input, and a hosted LLM in tests or CI.
 ## The corpus
 
 **Source.** The English documentation of FastAPI (github.com/fastapi/fastapi, `docs/en/docs/`), released under the
-MIT license, at tag `0.157.0`, commit `386a28af2f87af1a32ac26d88f07b7f58ab2dfb1`. It is a good test of retrieval: 156
-Markdown pages on one subject, so many passages are near-duplicates in topic and differ in detail (path parameters vs
-query parameters vs body parameters), and its questions mix plain words ("what status code does a validation error
+MIT license, at tag `0.157.0`, commit `386a28af2f87af1a32ac26d88f07b7f58ab2dfb1`. It is a good test of retrieval: 125
+pages on one subject (of the 156 English pages; the rest are excluded below), so many passages are near-duplicates in
+topic and differ in detail (path parameters vs query parameters vs body parameters), and its questions mix plain words ("what status code does a validation error
 get?") with exact identifiers (`Depends`, `HTTPException`, `response_model_exclude_unset`) that dense retrieval alone
 tends to miss.
 
@@ -36,14 +36,20 @@ files they include (`docs_src/`), and FastAPI's `LICENSE`, into `data/corpus/` (
 redistribution, but fetching keeps the repository small and makes the source of every byte explicit.
 
 **Integrity.** The archive's own bytes are not pinned: GitHub generates archives on request and has changed their
-compression before, which changes the archive's hash without changing its contents. Instead `fetch` checks two things:
+compression before, which changes the archive's hash without changing its contents. (The archives of the same commit by
+tag and by commit id already differ: 18,018,516 and 18,023,996 bytes, because the top directory is named after what was
+asked for; both give the same manifest.) Instead `fetch` checks two things:
 
 1. The commit id the archive declares (git writes it into the tar's global pax header, `comment=<commit>`) must be
    the pinned commit.
-2. Every file it extracts must match `corpus/manifest.json`: the path, the size and the SHA-256 of each of the files
-   Recall uses. A file the manifest lists but the archive lacks, or a file whose hash differs, fails the fetch, and
+2. Every file it extracts must match `src/recall/corpus/manifest.json`: the path, the size and the SHA-256 of each
+   of the 421 files Recall uses (125 pages, the 295 files they include, and the license). A file the manifest lists but the archive lacks, or a file whose hash differs, fails the fetch, and
    nothing is written unless every file checks out (extraction goes to a temporary directory that is renamed into
-   place at the end).
+   place at the end). Only regular files are read from the archive, by the manifest's paths, so a link or a member
+   named `../x` in the archive can't write outside `data/corpus/`; two members for one path are refused.
+
+`recall verify` checks an extracted corpus against the manifest (missing, changed and extra files), and `recall fetch`
+does nothing when the corpus already matches it.
 
 `recall manifest` regenerates the manifest from an archive; it is run once, when the pinned version changes, and the
 diff is reviewed like code.
@@ -55,9 +61,11 @@ diff is reviewed like code.
 | `release-notes.md` | 724 KB of changelog, half the corpus's bytes; its lines name versions, not behaviour, and would crowd out the pages that explain it. |
 | `reference/**` | Generated API reference: each page is a `::: fastapi.X` directive that mkdocstrings expands from docstrings at build time; the Markdown holds almost no text. |
 | `_llm-test.md`, `translation-banner.md` | Inputs to the translation tooling, not documentation. |
-| `fastapi-people.md`, `external-links.md`, `management.md`, `management-tasks.md`, `newsletter.md` | Generated lists of people and links, and project administration. |
+| `fastapi-people.md`, `external-links.md`, `management.md`, `newsletter.md` | Generated lists of people and links, project administration, a sign-up page. |
 
-Every exclusion is a path rule in `recall.corpus.source`, tested, and the manifest lists exactly the pages kept.
+Every exclusion is a path rule in `recall.corpus.source`, tested, and the manifest lists exactly the pages kept. One
+page includes FastAPI's own source (`fastapi/openapi/docs.py`, for the Swagger UI defaults); the manifest lists it
+like any other included file.
 
 ## Normalization
 

@@ -1,0 +1,2112 @@
+{
+ "repository": "fastapi/fastapi",
+ "tag": "0.157.0",
+ "commit": "386a28af2f87af1a32ac26d88f07b7f58ab2dfb1",
+ "files": [
+  {
+   "path": "LICENSE",
+   "size": 1086,
+   "sha256": "4ec89ffc81485b97fec584b2d4a961032eeffe834453894fd9c1274906cc744e"
+  },
+  {
+   "path": "docs/en/docs/about/index.md",
+   "size": 74,
+   "sha256": "b47a19143ea8845206cffb90103e3d1aaf5fc081891acc6c78d6310893b5d3a9"
+  },
+  {
+   "path": "docs/en/docs/advanced/additional-responses.md",
+   "size": 9051,
+   "sha256": "e8bba061371422a47f7f379a2a24493a67582da88eadf55575426cf8c2c6b39b"
+  },
+  {
+   "path": "docs/en/docs/advanced/additional-status-codes.md",
+   "size": 2002,
+   "sha256": "218eeb0ab9773ffc01143085b4ade9991c289334f09526a4d74087049a2de445"
+  },
+  {
+   "path": "docs/en/docs/advanced/advanced-dependencies.md",
+   "size": 9249,
+   "sha256": "f974f19e62ac242065fd8783e672e907f8b4b5738f06e0023a3d96c0d40ae754"
+  },
+  {
+   "path": "docs/en/docs/advanced/advanced-python-types.md",
+   "size": 2087,
+   "sha256": "cabf2d7ccaa178c7163899e837190bb89e90df1cc03db53acb256e74ab37ff9a"
+  },
+  {
+   "path": "docs/en/docs/advanced/async-tests.md",
+   "size": 3873,
+   "sha256": "6b89c80ee2049808d7081f1b12aceea3451128b771e8bc3bb82ba9d2b87b10dc"
+  },
+  {
+   "path": "docs/en/docs/advanced/behind-a-proxy.md",
+   "size": 14887,
+   "sha256": "ca98c9e590fcda5ef0ef12e387907b7e5c8677a889c5c920396f0ecb99b9d0b6"
+  },
+  {
+   "path": "docs/en/docs/advanced/custom-response.md",
+   "size": 11291,
+   "sha256": "590d22726236c1954e8dde69e2d842fd69ade6952fe46f43e3c3309799368f9d"
+  },
+  {
+   "path": "docs/en/docs/advanced/dataclasses.md",
+   "size": 4104,
+   "sha256": "38f32efa3334d83fc25fc798d898896af10eca2327b23514db459422fbc8f7df"
+  },
+  {
+   "path": "docs/en/docs/advanced/events.md",
+   "size": 7985,
+   "sha256": "33de759da943ea437830d8c744d8c0a3887f40c54f738886314575805216afab"
+  },
+  {
+   "path": "docs/en/docs/advanced/generate-clients.md",
+   "size": 8718,
+   "sha256": "d401f5f136ddae9e78d2f7bd0f28e5de08f69189b89e2f58fe22c95d4d9dd07f"
+  },
+  {
+   "path": "docs/en/docs/advanced/index.md",
+   "size": 757,
+   "sha256": "b1f89adea85d3293e397ac6dccc774b4aa04cbc94b5d63604d272bf5c9df7f6c"
+  },
+  {
+   "path": "docs/en/docs/advanced/json-base64-bytes.md",
+   "size": 2474,
+   "sha256": "9407de903f42e92c04b982a1d2d624007c552f672a7fa579a199b46e7cc18a28"
+  },
+  {
+   "path": "docs/en/docs/advanced/middleware.md",
+   "size": 4200,
+   "sha256": "051ef9c6cd54a566be9192e0e4b6667b0e84604db7a3cffea8d970f874d72014"
+  },
+  {
+   "path": "docs/en/docs/advanced/openapi-callbacks.md",
+   "size": 7857,
+   "sha256": "e5e9e2fc12deca5e6a24229d813d7b78e4ef6b750ad9de26c9393b1b3105221c"
+  },
+  {
+   "path": "docs/en/docs/advanced/openapi-webhooks.md",
+   "size": 2948,
+   "sha256": "5ac99c21eaad3bc474811457e6f1f03d553f7da217a22f20d4b743f6d637d23e"
+  },
+  {
+   "path": "docs/en/docs/advanced/opentelemetry.md",
+   "size": 7988,
+   "sha256": "9bb6165753d464cd52e7b33e9cee88a98485531d4e1878e527eeee9f4c04209a"
+  },
+  {
+   "path": "docs/en/docs/advanced/path-operation-advanced-configuration.md",
+   "size": 7120,
+   "sha256": "91828a237bb474c161a7d7424af07ada73f9398d69aa56409c048fe48cf17bd1"
+  },
+  {
+   "path": "docs/en/docs/advanced/response-change-status-code.md",
+   "size": 1558,
+   "sha256": "ea918672101986658fa199f2f307351aa80a053709cf2b904bddeac9972fc343"
+  },
+  {
+   "path": "docs/en/docs/advanced/response-cookies.md",
+   "size": 2228,
+   "sha256": "9a28cf8fcb42035459b8134128991a8c31c20646039378aaa997bcc1309352af"
+  },
+  {
+   "path": "docs/en/docs/advanced/response-directly.md",
+   "size": 4137,
+   "sha256": "ed930c2b190cecb99a336152e072e7430efa2b99afb5d47c741805965b361003"
+  },
+  {
+   "path": "docs/en/docs/advanced/response-headers.md",
+   "size": 2200,
+   "sha256": "ff783f7a73905b1ac4fca980dfaa09782af510cc038e193512a1c675e33591e0"
+  },
+  {
+   "path": "docs/en/docs/advanced/security/http-basic-auth.md",
+   "size": 5124,
+   "sha256": "29af6892acc5117daa11fa484cfe659b1d9c265705a68095a9426ffc287ca8ec"
+  },
+  {
+   "path": "docs/en/docs/advanced/security/index.md",
+   "size": 648,
+   "sha256": "533f365dfe52ab453074e3ccf4e551a5dad6620028aa7ab1787cc24f5dc5e415"
+  },
+  {
+   "path": "docs/en/docs/advanced/security/oauth2-scopes.md",
+   "size": 13769,
+   "sha256": "c8e866d22d766b9473958b91c0231c2547ded1f323207ca1c64609df2b36bb5e"
+  },
+  {
+   "path": "docs/en/docs/advanced/settings.md",
+   "size": 11816,
+   "sha256": "e25439be1e4468a444757378f4b65de038867df9bf969e1ddf64460dc3e8f79f"
+  },
+  {
+   "path": "docs/en/docs/advanced/stream-data.md",
+   "size": 5500,
+   "sha256": "8af35135ea5ebed19fe74496da9e109fdf842e7f1608abe00001a6cac5179da8"
+  },
+  {
+   "path": "docs/en/docs/advanced/strict-content-type.md",
+   "size": 3292,
+   "sha256": "c46698c00f096129b39817750c56134cac627bf74b9e9e0e2c748ae26fd98ac3"
+  },
+  {
+   "path": "docs/en/docs/advanced/sub-applications.md",
+   "size": 2956,
+   "sha256": "79ef2e6ad8b5bc4450369c3964a293a5ca79238c938b7e624995ec9eab97a5d8"
+  },
+  {
+   "path": "docs/en/docs/advanced/templates.md",
+   "size": 4398,
+   "sha256": "d00f44b1d685db9dfc31c2a796126718154dc5e323d87bb674771df131ad3661"
+  },
+  {
+   "path": "docs/en/docs/advanced/testing-dependencies.md",
+   "size": 2413,
+   "sha256": "6d26e7728428a508c2a51ac8e53920d003cbc9ed83f63df2e20590b199f12c2a"
+  },
+  {
+   "path": "docs/en/docs/advanced/testing-events.md",
+   "size": 624,
+   "sha256": "54bc35fff61354725614f937dd5452af649da0f8e32a8d08fdeb0b741d08862a"
+  },
+  {
+   "path": "docs/en/docs/advanced/testing-websockets.md",
+   "size": 407,
+   "sha256": "ba45f3b0fffa3f74b373b6d32d9ccb672b5ea681bcf15ae470e6acd16d4d3f68"
+  },
+  {
+   "path": "docs/en/docs/advanced/using-request-directly.md",
+   "size": 2336,
+   "sha256": "8b8867a2f4306c3f468b8e8f85b3647549c0435af603f44fb4057406a7bae56e"
+  },
+  {
+   "path": "docs/en/docs/advanced/websockets.md",
+   "size": 5394,
+   "sha256": "8320bc17f58bd4427b91caf7ab7aceb2143b3203aba29f29116b8829e5f62f31"
+  },
+  {
+   "path": "docs/en/docs/advanced/wsgi.md",
+   "size": 1478,
+   "sha256": "9b1216351f8791fda89672974318384590e2e2cd188287f56184d46357ea1ff9"
+  },
+  {
+   "path": "docs/en/docs/alternatives.md",
+   "size": 22663,
+   "sha256": "7b733200900f4ed3885c719c95bc50e40dbe00dcbe9b5466de8d3d6b7ea45475"
+  },
+  {
+   "path": "docs/en/docs/async.md",
+   "size": 23978,
+   "sha256": "5c112ab0e608d07324b13d9e8e61f670a932437a159d34e6a73779f65bfc9960"
+  },
+  {
+   "path": "docs/en/docs/benchmarks.md",
+   "size": 3503,
+   "sha256": "8834332af09b28fdee2c2490a8f9422b8f6d4952d4fd0517edf7a09f213608c6"
+  },
+  {
+   "path": "docs/en/docs/contributing.md",
+   "size": 271,
+   "sha256": "6dc18b05e194e864a9fd0353ae68bf89d66a531517306a38687f7b2d1b577126"
+  },
+  {
+   "path": "docs/en/docs/deployment/cloud.md",
+   "size": 1090,
+   "sha256": "dbd7b0dfca7df7e9dc2fd864050e1c88ff5c2cc54ecea77ae5626b1041423974"
+  },
+  {
+   "path": "docs/en/docs/deployment/concepts.md",
+   "size": 18936,
+   "sha256": "cd6e86bb5725fed1807b343a17b302ea8b1106b9049326b63707de499e2ee606"
+  },
+  {
+   "path": "docs/en/docs/deployment/docker.md",
+   "size": 28940,
+   "sha256": "0337b98d51778755f59aa1b96ba319f0decc20136f3b3ff1b7547619a5c71100"
+  },
+  {
+   "path": "docs/en/docs/deployment/fastapicloud.md",
+   "size": 1757,
+   "sha256": "2b1367d719cb81aaff9bd51e1d75de96ddb5e376245b1ef78ba07fe54d3756c5"
+  },
+  {
+   "path": "docs/en/docs/deployment/https.md",
+   "size": 14304,
+   "sha256": "96ab47d0bdd57399bc93fcf44877c6849e7f0513377273e25f783b5bb3117ad6"
+  },
+  {
+   "path": "docs/en/docs/deployment/index.md",
+   "size": 1520,
+   "sha256": "db01bbd0f4bc3cb78acaeec8a4a7ba94f11b4ca08acbd78d5f56f466cab0f1c0"
+  },
+  {
+   "path": "docs/en/docs/deployment/manually.md",
+   "size": 6603,
+   "sha256": "092f1a9a7b85634c20c2fd9a709f274201d109accdf620ccda12ff7be285c410"
+  },
+  {
+   "path": "docs/en/docs/deployment/server-workers.md",
+   "size": 8379,
+   "sha256": "5b4bd1b6afe1c9ef70bd210aa101ce386f6c48ee9f8c97e4066ab667545b74da"
+  },
+  {
+   "path": "docs/en/docs/deployment/versions.md",
+   "size": 3510,
+   "sha256": "be142679260fcd584d5b67d82099ef853ff095b0ba9b436d464794c08ab20432"
+  },
+  {
+   "path": "docs/en/docs/editor-support.md",
+   "size": 2516,
+   "sha256": "fb250ee1cd5cbe32561b356d10c969d140daf43daf7e34d29c9ec2bcff9e8029"
+  },
+  {
+   "path": "docs/en/docs/environment-variables.md",
+   "size": 771,
+   "sha256": "a2e41b48587953b605929203b7ab6c4cec51e6bec79c22e8b2c55aa37b356277"
+  },
+  {
+   "path": "docs/en/docs/fastapi-cli.md",
+   "size": 6710,
+   "sha256": "ad3860dd30364ab774324d61580dd2b7b175e28a0a3fbd3fc1b2c5ec779ffe3f"
+  },
+  {
+   "path": "docs/en/docs/features.md",
+   "size": 9140,
+   "sha256": "ceab6dbf056ac5aa7fc8be04f9b124d4e707f56342c62c300835cda9af094c2f"
+  },
+  {
+   "path": "docs/en/docs/help-fastapi.md",
+   "size": 3472,
+   "sha256": "e62936152a7bd13f0736c9232b88e26bf793426b2480888024a15740b17b2b2f"
+  },
+  {
+   "path": "docs/en/docs/history-design-future.md",
+   "size": 4086,
+   "sha256": "c557c39563c2d67ce6516d0753aa9e12b22e6208d066c698dfbf59b2c269e16a"
+  },
+  {
+   "path": "docs/en/docs/how-to/authentication-error-status-code.md",
+   "size": 1190,
+   "sha256": "af265f1e25f10028ba5593e8e5c430e4c3aae4be5f101d762bd3377eda70ee56"
+  },
+  {
+   "path": "docs/en/docs/how-to/conditional-openapi.md",
+   "size": 2436,
+   "sha256": "9e9ddd39df41b0a8afa138773e05343614ab0596705ffe77a01b932a218ca4ff"
+  },
+  {
+   "path": "docs/en/docs/how-to/configure-swagger-ui.md",
+   "size": 2891,
+   "sha256": "56856d863bcc2b5699f7c7407fb7b31eeef4925713a409cc7bac14adab0ee511"
+  },
+  {
+   "path": "docs/en/docs/how-to/custom-docs-ui-assets.md",
+   "size": 7693,
+   "sha256": "313417d3319baae4d9e13592c3c48f12cecd2df6473feeaea11eabb71c40a02e"
+  },
+  {
+   "path": "docs/en/docs/how-to/custom-request-and-route.md",
+   "size": 4552,
+   "sha256": "ce338d8ed72e10227f8a446876ce409714f9b646f58000512c2ba84f3ce096e8"
+  },
+  {
+   "path": "docs/en/docs/how-to/extending-openapi.md",
+   "size": 3740,
+   "sha256": "5c685bf0627b38937f38dce0a8365f1070559465868c1fa7ca8f7c27c037e798"
+  },
+  {
+   "path": "docs/en/docs/how-to/general.md",
+   "size": 2834,
+   "sha256": "e500a3aabb5ea2498feea2dd4eb8bab22546a1f7c29b5ca3fd7dfd485eb0351e"
+  },
+  {
+   "path": "docs/en/docs/how-to/graphql.md",
+   "size": 2785,
+   "sha256": "ef4e360d8647fea43b25ce6da4a7eb97f8577789f1445d20968ea7334a652e72"
+  },
+  {
+   "path": "docs/en/docs/how-to/index.md",
+   "size": 582,
+   "sha256": "def013c4e40ea6573fa8a87beaa0fc7867b84b8ce8138936fca25f25c8d06e95"
+  },
+  {
+   "path": "docs/en/docs/how-to/migrate-from-pydantic-v1-to-pydantic-v2.md",
+   "size": 6323,
+   "sha256": "299211edb22182d36aefa523589ab1bce7bfe1d7c40743547175dd9dc9a76e11"
+  },
+  {
+   "path": "docs/en/docs/how-to/separate-openapi-schemas.md",
+   "size": 4656,
+   "sha256": "3c53fb613d227decbbf349b7c5c488dbc048c460249cddde8cd9d17ff350668e"
+  },
+  {
+   "path": "docs/en/docs/how-to/testing-database.md",
+   "size": 393,
+   "sha256": "9e6f3d9e2344cc927bd48e4ac8b7cb30b7acec46887a25778c602fef132b159d"
+  },
+  {
+   "path": "docs/en/docs/index.md",
+   "size": 25185,
+   "sha256": "8793bbc33ba92718468451a690900161b6647332bf80204710932a28fbf2baef"
+  },
+  {
+   "path": "docs/en/docs/learn/index.md",
+   "size": 206,
+   "sha256": "accb670db6bc727d40aca998f2cef1a6c510c0f76cf5d9b84bf5c39e45dbfb72"
+  },
+  {
+   "path": "docs/en/docs/project-generation.md",
+   "size": 1998,
+   "sha256": "100e076b86ce3c10b8b434e6de36632436dc83a9009fbe595c699a8c6aaf2b2c"
+  },
+  {
+   "path": "docs/en/docs/python-types.md",
+   "size": 11214,
+   "sha256": "01a72f8818f0e04cc0b3d77d20fd1591ba34bdbe21b85d9f4ce9c17b2511a8b1"
+  },
+  {
+   "path": "docs/en/docs/resources/index.md",
+   "size": 83,
+   "sha256": "620b83b00fa7bd7c3a6ffa4c1675232f08c7662806847b2bb6769b3ef45e4303"
+  },
+  {
+   "path": "docs/en/docs/translations.md",
+   "size": 1796,
+   "sha256": "ea75834d82cca26c8b89381bba93000938d17b7f882ded58ee2fc81b15059905"
+  },
+  {
+   "path": "docs/en/docs/tutorial/background-tasks.md",
+   "size": 4786,
+   "sha256": "7a34e7a4a7bd2cb9e0b465588b77cf007b0a5c8bdcf7530ff3619ff6b3642468"
+  },
+  {
+   "path": "docs/en/docs/tutorial/bigger-applications.md",
+   "size": 20394,
+   "sha256": "43bda3093c97796838866e54becf78994e2f27915e9909e23bc77b59f5f9a23b"
+  },
+  {
+   "path": "docs/en/docs/tutorial/body-fields.md",
+   "size": 2417,
+   "sha256": "c826ba83421489edb760ea62f8e3891f18dfd658fe2d7be2f26cc5598447f251"
+  },
+  {
+   "path": "docs/en/docs/tutorial/body-multiple-params.md",
+   "size": 4932,
+   "sha256": "be8df903354461511052ae4bb75665268747039ab64d3fe872124870f7f09280"
+  },
+  {
+   "path": "docs/en/docs/tutorial/body-nested-models.md",
+   "size": 6818,
+   "sha256": "87c1ff04f9dc7c885be837cb992ebdf695907eecd9acc929faa1b7a184120f48"
+  },
+  {
+   "path": "docs/en/docs/tutorial/body-updates.md",
+   "size": 4091,
+   "sha256": "a798bdb62c27ac9a3f5d2b3853eb4168a31aeb08ff36595e0231747ccaad78a8"
+  },
+  {
+   "path": "docs/en/docs/tutorial/body.md",
+   "size": 6611,
+   "sha256": "1a3e0f7b9220dcee9a7379c999d57b49e126ed07725dbbc5566ee1278d4ec670"
+  },
+  {
+   "path": "docs/en/docs/tutorial/cookie-param-models.md",
+   "size": 3640,
+   "sha256": "16729dd53f7d56ce047204982c2736fb616e8f0c26a8c0ac95d2ec8e6e79b647"
+  },
+  {
+   "path": "docs/en/docs/tutorial/cookie-params.md",
+   "size": 1602,
+   "sha256": "790d67721fc8000801a48d0e8b4892a152388e12c4b7a2a58780dd73d0c68c28"
+  },
+  {
+   "path": "docs/en/docs/tutorial/cors.md",
+   "size": 5370,
+   "sha256": "da167c442cc3a73a776782a3e45936165c713e63cc40a9f0117d490a51a60b17"
+  },
+  {
+   "path": "docs/en/docs/tutorial/debugging.md",
+   "size": 2470,
+   "sha256": "3c05a63e149781e253413447a62b2559dce4dab9a304920d283f3ce34cc7bcf4"
+  },
+  {
+   "path": "docs/en/docs/tutorial/dependencies/classes-as-dependencies.md",
+   "size": 6915,
+   "sha256": "ddfad2447ac9a678dc7a41d4985f6b958edb75812465accab0c3c46161029aa5"
+  },
+  {
+   "path": "docs/en/docs/tutorial/dependencies/dependencies-in-path-operation-decorators.md",
+   "size": 2954,
+   "sha256": "69f61187f2a466880ee6471070d6516965c25f4d749b1a202b84a790a8ec8b8c"
+  },
+  {
+   "path": "docs/en/docs/tutorial/dependencies/dependencies-with-yield.md",
+   "size": 12857,
+   "sha256": "93f58ceecafff1967c39047657ae08a020d2452c84d795dc777901c35b8a0d17"
+  },
+  {
+   "path": "docs/en/docs/tutorial/dependencies/global-dependencies.md",
+   "size": 1060,
+   "sha256": "26fada3b3b65da1b47419a6d2c289630afabfccfd9ec80d4f8291702639d9e5f"
+  },
+  {
+   "path": "docs/en/docs/tutorial/dependencies/index.md",
+   "size": 9771,
+   "sha256": "83319cc87297bb0959c5721a112133e6a3cd19900163c348a8ee6cf4818cd21f"
+  },
+  {
+   "path": "docs/en/docs/tutorial/dependencies/sub-dependencies.md",
+   "size": 3827,
+   "sha256": "9900c54685fac0b5376ba3f0d2f000f19feadd42f605003fef9f3be304d82970"
+  },
+  {
+   "path": "docs/en/docs/tutorial/encoder.md",
+   "size": 1608,
+   "sha256": "a7116cae1b44f5ac5841475b533b2df621875c41047d70cb02841ada13e3a486"
+  },
+  {
+   "path": "docs/en/docs/tutorial/extra-data-types.md",
+   "size": 2693,
+   "sha256": "23892fb722a135d36fff8ba8a7dd0ba34591c1aa758ed5851a2d3438ada6b667"
+  },
+  {
+   "path": "docs/en/docs/tutorial/extra-models.md",
+   "size": 6868,
+   "sha256": "4c2302ff5c331ad0857a93f813f1a699b948476cc80e4bbc9bbea4484f3d5219"
+  },
+  {
+   "path": "docs/en/docs/tutorial/first-steps.md",
+   "size": 14155,
+   "sha256": "ecc419c9e4ccf1e996db0b196301aab93a8f43d52ddc59a180d4e88f8290c858"
+  },
+  {
+   "path": "docs/en/docs/tutorial/frontend.md",
+   "size": 6418,
+   "sha256": "eb513e68941a9d5d001001ee55d3d4235e5a25b613891c5681933fe76ff75d9e"
+  },
+  {
+   "path": "docs/en/docs/tutorial/handling-errors.md",
+   "size": 9156,
+   "sha256": "c0cb7aeafe8ed3802396f2421755cf1e740000347305c515a2c828c0c41f4b1a"
+  },
+  {
+   "path": "docs/en/docs/tutorial/header-param-models.md",
+   "size": 3357,
+   "sha256": "fe6490221cfb45612b18a0d707d7ed6b1f198545813375985972f308ce4822e0"
+  },
+  {
+   "path": "docs/en/docs/tutorial/header-params.md",
+   "size": 3032,
+   "sha256": "353c4df2c4e729fea065892556ce92b71c406d3147fd4fa8d8158ac0cda23e0f"
+  },
+  {
+   "path": "docs/en/docs/tutorial/index.md",
+   "size": 7464,
+   "sha256": "22d619c9497c8e88094fdba2b297c91ed29b21459b658a3586ae39a95fd65335"
+  },
+  {
+   "path": "docs/en/docs/tutorial/metadata.md",
+   "size": 5974,
+   "sha256": "96ed076601792a2c2564b8453e85d094b84c25d6b347be4dec70135fe179da2b"
+  },
+  {
+   "path": "docs/en/docs/tutorial/middleware.md",
+   "size": 3951,
+   "sha256": "58cb232d288a5bdfa6f91680f6615520748884e17463059a1f28e78273563c39"
+  },
+  {
+   "path": "docs/en/docs/tutorial/path-operation-configuration.md",
+   "size": 4121,
+   "sha256": "4dd48d33514d52d997bbee269a3c293d70619af1ed9799545a2714010914cad6"
+  },
+  {
+   "path": "docs/en/docs/tutorial/path-params-numeric-validations.md",
+   "size": 6207,
+   "sha256": "149a8e36ede2dc1341eb4d403c24c75392be6829c4b4e731e84bf3e6c0200f6f"
+  },
+  {
+   "path": "docs/en/docs/tutorial/path-params.md",
+   "size": 9041,
+   "sha256": "81e09015b7a5c40e460eca9939da240a66f8a9efd88ad21c7992146337426fea"
+  },
+  {
+   "path": "docs/en/docs/tutorial/query-param-models.md",
+   "size": 3641,
+   "sha256": "64c494c0ba92eb7df061633e16da70d1576adead3bfa6437f8bcc5dffdbd0a68"
+  },
+  {
+   "path": "docs/en/docs/tutorial/query-params-str-validations.md",
+   "size": 17098,
+   "sha256": "e783acbc1d41e1fc5f7dc0babaf812bca995b1db6618022e2df5545798c1650b"
+  },
+  {
+   "path": "docs/en/docs/tutorial/query-params.md",
+   "size": 4886,
+   "sha256": "260a8599062431557dda2c3b535d5b49a3b6b7d71c3ce680fad3ade1dfe1eb86"
+  },
+  {
+   "path": "docs/en/docs/tutorial/request-files.md",
+   "size": 7080,
+   "sha256": "4faafb4853d46b41cb9bc4c7c57e3ab293bcb9ce318b3b369162c4e239425ab6"
+  },
+  {
+   "path": "docs/en/docs/tutorial/request-form-models.md",
+   "size": 2173,
+   "sha256": "25762a30adcaccd83220e645e807a2334543a1203d4e430a79cc9b82d9cb8ca8"
+  },
+  {
+   "path": "docs/en/docs/tutorial/request-forms-and-files.md",
+   "size": 1352,
+   "sha256": "2b0b1c3218818cb05b679ea0f80f1fe6493cf43fbf651305411b3e2b44a122b2"
+  },
+  {
+   "path": "docs/en/docs/tutorial/request-forms.md",
+   "size": 2826,
+   "sha256": "274c0c010be37d26062470fd519a009d28c417bbfd1801f50a37f03692e6b1e4"
+  },
+  {
+   "path": "docs/en/docs/tutorial/response-model.md",
+   "size": 15890,
+   "sha256": "1cb51565cc693ee12e8f9cb6bfeefdab18bc010457274a4d55836474a1bb04ee"
+  },
+  {
+   "path": "docs/en/docs/tutorial/response-status-code.md",
+   "size": 3994,
+   "sha256": "44c62f134437997178668480503cc1cdfc55b45367ce8a66beff89c839aa896a"
+  },
+  {
+   "path": "docs/en/docs/tutorial/schema-extra-example.md",
+   "size": 8970,
+   "sha256": "1bc9e50ddfa28bc8c6057ebdeafafae8069ab9d05e2a1674555122ede3a263a0"
+  },
+  {
+   "path": "docs/en/docs/tutorial/security/first-steps.md",
+   "size": 8357,
+   "sha256": "56a4f9201ff9a331bede5685a1a546f6bc536f75eb4aaeba5c1fb1fb8a49f8c7"
+  },
+  {
+   "path": "docs/en/docs/tutorial/security/get-current-user.md",
+   "size": 4117,
+   "sha256": "2463a415b23ebf2398040ca35a899de4ed7cd7888cb0f7d61f529c4be53f14a4"
+  },
+  {
+   "path": "docs/en/docs/tutorial/security/index.md",
+   "size": 4548,
+   "sha256": "6c316110d145e16cc08e6e3caff00ebe7247470e85af3ce212d1ba3391092da8"
+  },
+  {
+   "path": "docs/en/docs/tutorial/security/oauth2-jwt.md",
+   "size": 10762,
+   "sha256": "09de4db00267448e11cbdc198154c6bf3ac4aa48cb88ecb87ee4e71d44d9272b"
+  },
+  {
+   "path": "docs/en/docs/tutorial/security/simple-oauth2.md",
+   "size": 9579,
+   "sha256": "157bf4bfab49f239293ccbd7ef7af48398fd893f9ac158e06a0544c693c0dc65"
+  },
+  {
+   "path": "docs/en/docs/tutorial/server-sent-events.md",
+   "size": 4704,
+   "sha256": "1c2c53c7e20c55ce5e9d147347b65a8cd2b9dc982fd33a5b5187b07cbd79554b"
+  },
+  {
+   "path": "docs/en/docs/tutorial/sql-databases.md",
+   "size": 15620,
+   "sha256": "a090bb4174b12a5d7bbc84a7e7c3d8d4461d02b23501c59abbed2d894460df9f"
+  },
+  {
+   "path": "docs/en/docs/tutorial/static-files.md",
+   "size": 1921,
+   "sha256": "6b6ed80768d92bd021a0abf9a9ba5b571dcc9b23440d1de5a13e5a109c4e77f8"
+  },
+  {
+   "path": "docs/en/docs/tutorial/stream-json-lines.md",
+   "size": 4452,
+   "sha256": "48c8b930042ac448af3f36a09b13cbf5fb5ad087f30204ae55b61efcea858b44"
+  },
+  {
+   "path": "docs/en/docs/tutorial/testing.md",
+   "size": 5624,
+   "sha256": "759b81a9967dc50ec405877a23bb362d202e5d483fe38ad2308cb32a88eb8eda"
+  },
+  {
+   "path": "docs/en/docs/virtual-environments.md",
+   "size": 1140,
+   "sha256": "c8b41132d9979b10fdb6e469f87f3c0425fec59b710336d2e4e053007ec40dcc"
+  },
+  {
+   "path": "docs_src/additional_responses/tutorial001_py310.py",
+   "size": 506,
+   "sha256": "612da60c415c496d69abe57869aa440fbcda1d6c532d1e37432f7f136f28d0dd"
+  },
+  {
+   "path": "docs_src/additional_responses/tutorial002_py310.py",
+   "size": 596,
+   "sha256": "9affbc269aa5ac588f3024310c39e02a79778160fe75901ad8c1468fb28bdae5"
+  },
+  {
+   "path": "docs_src/additional_responses/tutorial003_py310.py",
+   "size": 837,
+   "sha256": "6fc74f39c96da18ac4d179ba3fc4dd0a035288e31022d91cfa49dbaf440c662c"
+  },
+  {
+   "path": "docs_src/additional_responses/tutorial004_py310.py",
+   "size": 669,
+   "sha256": "cab81f82d4e279d5c8185830647e9c38c1d858730262e8a4666ecbb08fa48f9d"
+  },
+  {
+   "path": "docs_src/additional_status_codes/tutorial001_an_py310.py",
+   "size": 686,
+   "sha256": "243ef632dea60a9492750e5f1c57411d6e050417c211f5fe8e9b11c6f4870783"
+  },
+  {
+   "path": "docs_src/advanced_middleware/tutorial001_py310.py",
+   "size": 231,
+   "sha256": "33e9e46c522fda0144e0223d58f2e1f18ee54da574ddf2d4aae68e2430b60f96"
+  },
+  {
+   "path": "docs_src/advanced_middleware/tutorial002_py310.py",
+   "size": 279,
+   "sha256": "503289271cfef94141627667ffdee2584a289cb88a022dc26ee94bea5c2bd02c"
+  },
+  {
+   "path": "docs_src/advanced_middleware/tutorial003_py310.py",
+   "size": 230,
+   "sha256": "d21fa2479c14650e0f63c4489504671b1d63e8376bd13e9db65e5437b8b7b45b"
+  },
+  {
+   "path": "docs_src/app_testing/app_a_py310/main.py",
+   "size": 118,
+   "sha256": "799a66ca241638380ba6e08101ed0da161b8635b4938b46fe30beb3694cb8ab0"
+  },
+  {
+   "path": "docs_src/app_testing/app_a_py310/test_main.py",
+   "size": 238,
+   "sha256": "e7206e066c05dfff12979153ccefe474986f5fc8ca2a55c3e2738ad6ef788af2"
+  },
+  {
+   "path": "docs_src/app_testing/app_b_an_py310/main.py",
+   "size": 1163,
+   "sha256": "bb5514b0dbea75e676a9447acf428d6a130727fa6a751c865cc302aaf476a053"
+  },
+  {
+   "path": "docs_src/app_testing/app_b_an_py310/test_main.py",
+   "size": 1866,
+   "sha256": "0983f6ade01f3eee326f77e6c160deb437a67f3907880ee35c68eee5348aa08c"
+  },
+  {
+   "path": "docs_src/app_testing/tutorial001_py310.py",
+   "size": 334,
+   "sha256": "193b66240f88d01a65bb1bddc43dc1a36cd13b5c43e50a226decfc4f1c0cd775"
+  },
+  {
+   "path": "docs_src/app_testing/tutorial002_py310.py",
+   "size": 757,
+   "sha256": "98c45888d90f3ca0ea2fdcdd27b617fe74d0e00ed83fae404aef2f51e0eabb90"
+  },
+  {
+   "path": "docs_src/app_testing/tutorial003_py310.py",
+   "size": 528,
+   "sha256": "b40f9768ee8e7a1dbc8afa594975a24f19be411b58968e55b024f37cafce21e2"
+  },
+  {
+   "path": "docs_src/app_testing/tutorial004_py310.py",
+   "size": 1187,
+   "sha256": "8b9936fc81135a831d39ab9190d8be9dd77a218959afd7578de04ba0947ad61e"
+  },
+  {
+   "path": "docs_src/async_tests/app_a_py310/main.py",
+   "size": 112,
+   "sha256": "f28e4cbedad7a9e0a8f72e6fb71a677c40a01977cf79f238b9e0f6402810e0ce"
+  },
+  {
+   "path": "docs_src/async_tests/app_a_py310/test_main.py",
+   "size": 360,
+   "sha256": "a129755184f168aaa0f56307f4e43541ca6e5d392a185a3442983400ab3daffb"
+  },
+  {
+   "path": "docs_src/authentication_error_status_code/tutorial001_an_py310.py",
+   "size": 618,
+   "sha256": "6146407664b4861afb2c077d20bbd199075ae8e37709648f77f649024c3ee5da"
+  },
+  {
+   "path": "docs_src/background_tasks/tutorial001_py310.py",
+   "size": 519,
+   "sha256": "8218ad01272cffb42643773619fe7025bee2d3a826361fe9db4f7cf5db8a8308"
+  },
+  {
+   "path": "docs_src/background_tasks/tutorial002_an_py310.py",
+   "size": 683,
+   "sha256": "9550189a7e3385a09d46cf8b636514a610845f4c32ce06ee03d1735999bc2272"
+  },
+  {
+   "path": "docs_src/behind_a_proxy/tutorial001_01_py310.py",
+   "size": 122,
+   "sha256": "168a030deb720740892a8e523aec9409d3532d5d81cac054e48be86e80be2bed"
+  },
+  {
+   "path": "docs_src/behind_a_proxy/tutorial001_py310.py",
+   "size": 189,
+   "sha256": "801a2f91be33c28c39eb2413abce0d0236eaffd8830abc758cbb389ea14bbe35"
+  },
+  {
+   "path": "docs_src/behind_a_proxy/tutorial003_py310.py",
+   "size": 380,
+   "sha256": "6bb913536872b4ba94a3e1e659691508d1c89e0f7f98a148fb453d5c6bce14ed"
+  },
+  {
+   "path": "docs_src/behind_a_proxy/tutorial004_py310.py",
+   "size": 412,
+   "sha256": "07cb22973278c3c2bbc49b6cf9e9e7876e0ee1e28f380e26619f1d4e45fc4e94"
+  },
+  {
+   "path": "docs_src/bigger_applications/app_an_py310/dependencies.py",
+   "size": 409,
+   "sha256": "b55adb4cbc5adec1ec76e8ea3d6ce181a2770552fd569b3f51a84d82436eec58"
+  },
+  {
+   "path": "docs_src/bigger_applications/app_an_py310/internal/admin.py",
+   "size": 147,
+   "sha256": "2c81315bfe86c99ab3481f74420d561cf9d9a59c340db702ec6e1bf6ab6806c1"
+  },
+  {
+   "path": "docs_src/bigger_applications/app_an_py310/main.py",
+   "size": 552,
+   "sha256": "8df1c8f236376374a2cc065fe08ca2d8888b0a3b3bfe916e4f5d35e75b6f22c8"
+  },
+  {
+   "path": "docs_src/bigger_applications/app_an_py310/routers/items.py",
+   "size": 1011,
+   "sha256": "b5fd6677ef47e3861eb39135015702b4a9f452a47cd5e6f0ebecd7b1d7ea55bb"
+  },
+  {
+   "path": "docs_src/bigger_applications/app_an_py310/routers/users.py",
+   "size": 407,
+   "sha256": "b2276e608ff0937a12e74103ef2966cd468b1e156675a4b936babbba7d9d3756"
+  },
+  {
+   "path": "docs_src/body/tutorial001_py310.py",
+   "size": 271,
+   "sha256": "e481030f5b9ceaddc5e1ab2cd7bb36ef415799d457e54fa89f58b93510166a3a"
+  },
+  {
+   "path": "docs_src/body/tutorial002_py310.py",
+   "size": 447,
+   "sha256": "f866d820fe050d6cfc1db57b6cd398c02f7229088e3a6c1295ee4948b65ec141"
+  },
+  {
+   "path": "docs_src/body/tutorial003_py310.py",
+   "size": 330,
+   "sha256": "4800cfffa0fc0a62d4c5b9869f434d4eff156e073793bcfba4e1335050076c95"
+  },
+  {
+   "path": "docs_src/body/tutorial004_py310.py",
+   "size": 414,
+   "sha256": "c8d30be2043035931dba7140f525857311418184574e9c22cdb7f78e70eb7f03"
+  },
+  {
+   "path": "docs_src/body_fields/tutorial001_an_py310.py",
+   "size": 563,
+   "sha256": "56bc9126f371dc8f6781410733452d13392551da6908eb50dffb38a80e6154aa"
+  },
+  {
+   "path": "docs_src/body_multiple_params/tutorial001_an_py310.py",
+   "size": 579,
+   "sha256": "a4dd2eb635a96f02fdc3d0e86df6b4b21340173f2ac997547d9665428ebcbe95"
+  },
+  {
+   "path": "docs_src/body_multiple_params/tutorial002_py310.py",
+   "size": 446,
+   "sha256": "dbe98c9ac3ad52e12b7f71a7ed7b925648e62e7b0934d21aac237f3f1d212816"
+  },
+  {
+   "path": "docs_src/body_multiple_params/tutorial003_an_py310.py",
+   "size": 550,
+   "sha256": "cc19bc26b69965dc72c97abe5128f7f903073bff2d82cd6146446f4821a11f59"
+  },
+  {
+   "path": "docs_src/body_multiple_params/tutorial004_an_py310.py",
+   "size": 643,
+   "sha256": "2f4e34a76b52675e59fa8a0198d9ba5c2b1291e124c4b1c8c6d1da0c8fbf3d8f"
+  },
+  {
+   "path": "docs_src/body_multiple_params/tutorial005_an_py310.py",
+   "size": 409,
+   "sha256": "a1b219436f9042cf3685e4a7c923138e7ace69143b87af96a450bd241e09443b"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial001_py310.py",
+   "size": 364,
+   "sha256": "2f24ba4132e09b43e6956517ec9d2da13bfc6d950a3db9d023d5de4455dcd467"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial002_py310.py",
+   "size": 369,
+   "sha256": "d11582a1e9997ebe670e925c260c00ef8304b04bcf0ac75e969ea08ba610476c"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial003_py310.py",
+   "size": 371,
+   "sha256": "0ea95f9d014b22c7c9f3a9de5234ed7f6d1e9e4c670e034e9de8acca0f2a790c"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial004_py310.py",
+   "size": 455,
+   "sha256": "bb8b73fc9a5509f97cea1055ac6c48078f696fd43d37bf2e955ee91f5c40eef0"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial005_py310.py",
+   "size": 468,
+   "sha256": "c994b6ecf60776bb705b250c756850191c36f5d34a347e2cdb9d8c8e01ddcbae"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial006_py310.py",
+   "size": 475,
+   "sha256": "c560343e03b8d1f51036be63047b5cd77569b89e377b042623c2c1482dd80311"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial007_py310.py",
+   "size": 520,
+   "sha256": "e150518d47637a092a0bacfca26591fa3130ef9181ed8067d34ae40b3cb502a5"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial008_py310.py",
+   "size": 248,
+   "sha256": "cab9a942d5265955449d3973321cacce8141b18abbacc2e95141b57510b76063"
+  },
+  {
+   "path": "docs_src/body_nested_models/tutorial009_py310.py",
+   "size": 154,
+   "sha256": "71da8f8bfda33df8d9253041fb6964cd02d1e678e352329a01d89e5b52094fd7"
+  },
+  {
+   "path": "docs_src/body_updates/tutorial001_py310.py",
+   "size": 856,
+   "sha256": "af11e561fad763575bb70b3ae507ef732f3899a16b7a98dcf26b1bb81b4adc95"
+  },
+  {
+   "path": "docs_src/body_updates/tutorial002_py310.py",
+   "size": 1009,
+   "sha256": "de0238d08318a3e5c3c2d2a2c6b080ea1a4a0e35ab8083d060edb78e08996e0c"
+  },
+  {
+   "path": "docs_src/conditional_openapi/tutorial001_py310.py",
+   "size": 281,
+   "sha256": "8049c85a4efcc2a3a2df15619fbcb131dcbb9d849471cdbd60711c10d0481e11"
+  },
+  {
+   "path": "docs_src/configure_swagger_ui/tutorial001_py310.py",
+   "size": 205,
+   "sha256": "a6e82c05dcaf74e13999a2a0edd1f73f68574d2285b1aac236227350f88f0e7d"
+  },
+  {
+   "path": "docs_src/configure_swagger_ui/tutorial002_py310.py",
+   "size": 221,
+   "sha256": "3aafab40ca3b5b69669ef6591d2bd3a6c0700bef2fb97c6fe88302637146d036"
+  },
+  {
+   "path": "docs_src/configure_swagger_ui/tutorial003_py310.py",
+   "size": 201,
+   "sha256": "96620dfec68305426d49ebc9408d2d7a38509c5b337992cf9237e73f00e1280e"
+  },
+  {
+   "path": "docs_src/cookie_param_models/tutorial001_an_py310.py",
+   "size": 343,
+   "sha256": "92400f6fb555dc30c50c67f620c5bd6201ca70ab61c900e26c937d1f8d18e841"
+  },
+  {
+   "path": "docs_src/cookie_param_models/tutorial002_an_py310.py",
+   "size": 383,
+   "sha256": "03f9fc8f98a24e8c0dc76245def6fb89903010cd24922d1943e9ba05745a9180"
+  },
+  {
+   "path": "docs_src/cookie_params/tutorial001_an_py310.py",
+   "size": 205,
+   "sha256": "7e29d6ab7494efeb57f6bbfa09520169abd11b1b0a5836b1447310f152e085ae"
+  },
+  {
+   "path": "docs_src/cors/tutorial001_py310.py",
+   "size": 459,
+   "sha256": "145cde24734c8bb5e11184c97596449162e234f5cd770f79e959976bd61877b2"
+  },
+  {
+   "path": "docs_src/custom_docs_ui/tutorial001_py310.py",
+   "size": 1143,
+   "sha256": "a72e8cc9ca74f2450041827f0f2335cc98ae8c308b63413b35d43ce18cce08ac"
+  },
+  {
+   "path": "docs_src/custom_docs_ui/tutorial002_py310.py",
+   "size": 1175,
+   "sha256": "4455834e31101bef8a318274c0c73670109c47db6abf2b2bef8a97718cb04446"
+  },
+  {
+   "path": "docs_src/custom_request_and_route/tutorial001_an_py310.py",
+   "size": 1015,
+   "sha256": "9a10b7d52f3e607ed8bb189af2834b43c6905f274a9dc39de7c733e16db27d68"
+  },
+  {
+   "path": "docs_src/custom_request_and_route/tutorial002_an_py310.py",
+   "size": 974,
+   "sha256": "406c5be20ff39d82d0ad5d13f988c9445d856b6964a88e110712640553fd1a4a"
+  },
+  {
+   "path": "docs_src/custom_request_and_route/tutorial003_py310.py",
+   "size": 1051,
+   "sha256": "2fc74e148cce29cbe9dffdea75faf5d6a293c5086746d461e14d8f987639766a"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial002_py310.py",
+   "size": 352,
+   "sha256": "60017c3ca4ffa4d3edd6b046bb932d73f2ded42dd8e3334fa0d30ba6f5c9623e"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial003_py310.py",
+   "size": 394,
+   "sha256": "1af26e9e091a5f69dea6c85703bfd49491281f0ffd905ca6aeb6be61fb7ec42e"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial004_py310.py",
+   "size": 491,
+   "sha256": "71ee3cedadab4feb75c79eedab6cfc9bc62fe980146220fa58199f6b10c38e6d"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial005_py310.py",
+   "size": 186,
+   "sha256": "69ad204fa756166e8e2a105d752fadf6f86cbdaf5331e904e6ce9c305672dfb9"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial006_py310.py",
+   "size": 199,
+   "sha256": "3f1bbd64331088196e1c8ca160527d3df03497ec10514f828432b14f48b1d094"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial006b_py310.py",
+   "size": 220,
+   "sha256": "9dc3e253bb77c8dc59d0b3d9f8593272fd1926227746c984ade2da4ccad045bf"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial006c_py310.py",
+   "size": 237,
+   "sha256": "f52244116cece2b716798322c13a4028828177dc179802e76d3068fc75d1ab23"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial007_py310.py",
+   "size": 319,
+   "sha256": "55364469146c6890300e56c280fbdd55ae1514a9f5a7597428621fe605e8afb8"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial009_py310.py",
+   "size": 202,
+   "sha256": "186849eeceec2bc03691f98381b18d7358296338fda2b3cc45d179750e9556f7"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial009b_py310.py",
+   "size": 217,
+   "sha256": "9b4827db0dc59b19f9a9a8f3361d10f8b17175097ffa0e68c08f99d6c7e3cfda"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial009c_py310.py",
+   "size": 451,
+   "sha256": "eeda12578a6d23f09a9b80a92a771f79b47cfd2a283883982a153e5912391366"
+  },
+  {
+   "path": "docs_src/custom_response/tutorial010_py310.py",
+   "size": 228,
+   "sha256": "3d9166f63d0970ba4c0d2c6c52cbb1a6b2be4602c0ce6878430511405eea204e"
+  },
+  {
+   "path": "docs_src/dataclasses_/tutorial001_py310.py",
+   "size": 275,
+   "sha256": "6dc3cb4a8d92dda49497cc3c82f23045d4864b776fe60cbe1a7e0789f883cdfc"
+  },
+  {
+   "path": "docs_src/dataclasses_/tutorial002_py310.py",
+   "size": 506,
+   "sha256": "dfbeb94c16378fe54e1f888aad59f727087561191e60e39a50a0a5781b1baaa7"
+  },
+  {
+   "path": "docs_src/dataclasses_/tutorial003_py310.py",
+   "size": 1363,
+   "sha256": "4925116e9ad95b096a855599c5c927b73003b44e96de2054732a1259a1e34d85"
+  },
+  {
+   "path": "docs_src/debugging/tutorial001_py310.py",
+   "size": 223,
+   "sha256": "2bc07b02cd97cd215de0accc4ca3295003d7cad7860999e2678ff1bfd681c19a"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial001_02_an_py310.py",
+   "size": 447,
+   "sha256": "823aea3f4777d1b4bcc13c946ecff73a85b895766dc503d6a0a2f9eb1ff88583"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial001_an_py310.py",
+   "size": 454,
+   "sha256": "d86dfe481e6e8fc1a90a5be496102bd260c514c73599a7a4655a538a1c7e6647"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial002_an_py310.py",
+   "size": 664,
+   "sha256": "c5ea85b02c76f70616b1af01d5ffb17b9c5a30718e73a17475442a15ada01380"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial003_an_py310.py",
+   "size": 655,
+   "sha256": "523e6cefcd27b69d9359abb3b39d5813c7ef9c76de3533e9779b66877e538a3e"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial004_an_py310.py",
+   "size": 647,
+   "sha256": "1081bcff4434da24d2eaf618e3a9c944742d6b4adc84b1c36885676e95b983d4"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial005_an_py310.py",
+   "size": 510,
+   "sha256": "04927c56654908254f8ef335ac3949244a921d20313664dc10837ce49208ec82"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial006_an_py310.py",
+   "size": 633,
+   "sha256": "bee6574cf5b7ec43dcdf333e8c3bdaac87ef75db76e2958260fdfdda858fbe35"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial007_py310.py",
+   "size": 99,
+   "sha256": "f73b07eb2d9caa2225227e8d57fc348f3912a1640ff9dcf3d9f68b3eae8f6508"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial008_an_py310.py",
+   "size": 521,
+   "sha256": "439bdc0dd6bdaa08a4d428f41fcfc45d350fc96cd29d451a60c3f7f80b7c365d"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial008b_an_py310.py",
+   "size": 775,
+   "sha256": "a401e288a548d12ac72b307f54dc792413896b70db731dec49d65fb08fc6369d"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial008c_an_py310.py",
+   "size": 700,
+   "sha256": "6e0ea198f11f19c2812d040d7757e486497f771ec5d0fa9ce03551c879298fe8"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial008d_an_py310.py",
+   "size": 734,
+   "sha256": "3b49b4fb2321efaf78def86ca4c11ff6c8aff4690fdaf66953bec49adc90c294"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial008e_an_py310.py",
+   "size": 329,
+   "sha256": "8c4681e9ce9cd67c743806f6ffc65d3e6fe9869e1538248e5b52fcc06d7823dc"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial010_py310.py",
+   "size": 292,
+   "sha256": "ff0c310d621034082022bfee2a5cafa552dc5528422aaa30be109ed4dd40c676"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial011_an_py310.py",
+   "size": 544,
+   "sha256": "70725400f6bdeef3bd6d73fc1dd34d9edc015a74ffdf6d29c8238aaa09d165f2"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial012_an_py310.py",
+   "size": 746,
+   "sha256": "2ade2645483ab52666faefbf57601a4a225966c852fd5025a881e2f8759a5d63"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial013_an_py310.py",
+   "size": 937,
+   "sha256": "8d98a9b2edea3f06d5749e6c8b1eaa7afb7844c1570ab7001352770dc1c84eb2"
+  },
+  {
+   "path": "docs_src/dependencies/tutorial014_an_py310.py",
+   "size": 957,
+   "sha256": "d78a92ba4458f8cab7c0ef1837c6d883c0952f67f26b765dec5dc112e166befa"
+  },
+  {
+   "path": "docs_src/dependency_testing/tutorial001_an_py310.py",
+   "size": 1528,
+   "sha256": "4a2bce30cf302bd035c13ead1b0c8a013db6c53e0f482f030e1010ff1c188d3a"
+  },
+  {
+   "path": "docs_src/encoder/tutorial001_py310.py",
+   "size": 430,
+   "sha256": "a06f3772ba98331b67d09cca79f0f7778e209236f3fb809a9706fdf01d9db5f1"
+  },
+  {
+   "path": "docs_src/events/tutorial001_py310.py",
+   "size": 283,
+   "sha256": "604cbccedd27a9b4923c143b21df0d2bcf7e74635ee76af610c555c7244cc9c0"
+  },
+  {
+   "path": "docs_src/events/tutorial002_py310.py",
+   "size": 255,
+   "sha256": "2fcaf57d6821142045a7e66ced2591164d83983286e5339ee30d51efc0dc7386"
+  },
+  {
+   "path": "docs_src/events/tutorial003_py310.py",
+   "size": 569,
+   "sha256": "9eea93386ade43893270e8fbd00bd2da053ea4e1e4eea9e35c65d849e8eaaaf0"
+  },
+  {
+   "path": "docs_src/extending_openapi/tutorial001_py310.py",
+   "size": 737,
+   "sha256": "84926bf81e10d22bc84d7d69dc108435b1ec502097f2edde7d2f3f27ca75d1a1"
+  },
+  {
+   "path": "docs_src/extra_data_types/tutorial001_an_py310.py",
+   "size": 788,
+   "sha256": "696d1c1b682ee66dd4ebe1741efa5528b182b46740c3e577519d513585f94776"
+  },
+  {
+   "path": "docs_src/extra_models/tutorial001_py310.py",
+   "size": 905,
+   "sha256": "b19212af4799db5c408d2dd6ccd1b447694990772505e427a0ed1529e9da6980"
+  },
+  {
+   "path": "docs_src/extra_models/tutorial002_py310.py",
+   "size": 798,
+   "sha256": "303a663e4d4b77b381459c68697c7200053cc9a3e5ba580f6569c1f5f3c7c849"
+  },
+  {
+   "path": "docs_src/extra_models/tutorial003_py310.py",
+   "size": 612,
+   "sha256": "0c231ca8880f39279e29e21e5e909c3fe3eefaca872581cfedbe744c3d56fb7c"
+  },
+  {
+   "path": "docs_src/extra_models/tutorial004_py310.py",
+   "size": 356,
+   "sha256": "565a155c731327afb01a291bcfe9bd3640cedcfd897d020a4e1a837343622b6f"
+  },
+  {
+   "path": "docs_src/extra_models/tutorial005_py310.py",
+   "size": 180,
+   "sha256": "65bba303a1785c06c76a8e02e158937f2a31b707ba4c0eb234bbac4c0110c967"
+  },
+  {
+   "path": "docs_src/first_steps/tutorial001_py310.py",
+   "size": 117,
+   "sha256": "88c744bf8154cc2a96793f9df1058431588029f7422ee0bcb62b74130a801650"
+  },
+  {
+   "path": "docs_src/first_steps/tutorial003_py310.py",
+   "size": 111,
+   "sha256": "b0ba3b1d47204510640516d3808558eb6fa65f15cc027dd86db2e236eea57375"
+  },
+  {
+   "path": "docs_src/frontend/tutorial001_py310.py",
+   "size": 82,
+   "sha256": "f7c806115d0d3d11150a8370d600351f806d50cf37aa0247013e801cbd07463e"
+  },
+  {
+   "path": "docs_src/frontend/tutorial002_py310.py",
+   "size": 105,
+   "sha256": "e90ad6cee620d73f4c5058f0c9598cff1a0ff79c2a88e06bc38e65153566f1b8"
+  },
+  {
+   "path": "docs_src/frontend/tutorial003_py310.py",
+   "size": 103,
+   "sha256": "a50c1d1f3dca1016f82ddfee46dc7dfd7f442a0d583df7114fcc30d5364e0ca4"
+  },
+  {
+   "path": "docs_src/frontend/tutorial004_py310.py",
+   "size": 182,
+   "sha256": "04a7595a4a0eee04fb54c98ca9985ab9e69ed1482fdbaba5b3e85b8f8d9dd71b"
+  },
+  {
+   "path": "docs_src/frontend/tutorial005_py310.py",
+   "size": 97,
+   "sha256": "85d2ecaca604f2fe40baa92fcd2ff4b76b7721c013506885912ae8662fc8e497"
+  },
+  {
+   "path": "docs_src/frontend/tutorial006_py310.py",
+   "size": 99,
+   "sha256": "dca50f171c528d4acff3c2ef6836ac49ff3c1dcb79521e7f9e5c11e266968b44"
+  },
+  {
+   "path": "docs_src/generate_clients/tutorial001_py310.py",
+   "size": 494,
+   "sha256": "da926c9102e5640405283d439678440cea07a851057cb00ae672156bd5df2060"
+  },
+  {
+   "path": "docs_src/generate_clients/tutorial002_py310.py",
+   "size": 730,
+   "sha256": "30aa4df90c3ba350ab1918a6306b67ace5b5e8f357fec0dded14f0cdf692b04d"
+  },
+  {
+   "path": "docs_src/generate_clients/tutorial003_py310.py",
+   "size": 914,
+   "sha256": "f9d83568e433f4e82ca8899ed7dfc23571b22a6ca796aca1434643ce4dbe527a"
+  },
+  {
+   "path": "docs_src/generate_clients/tutorial004.js",
+   "size": 1066,
+   "sha256": "65fc95dc3646991646a1175e7cf28f46425b53e08f35ae009d4d2c5bc2b773a1"
+  },
+  {
+   "path": "docs_src/generate_clients/tutorial004_py310.py",
+   "size": 493,
+   "sha256": "97ed98ad353e86ff5ddf6819fdcf61d029e25896329462dc2e291addaeefca71"
+  },
+  {
+   "path": "docs_src/graphql_/tutorial001_py310.py",
+   "size": 424,
+   "sha256": "f166f89a97dab9569e3c735713130d00c2a8bb3badd53b2a1f7436b17dac7513"
+  },
+  {
+   "path": "docs_src/handling_errors/tutorial001_py310.py",
+   "size": 299,
+   "sha256": "ae11c344b30574d3ef126de0d05a96b6c9d2466fc7c566e4e8bf989704807b5c"
+  },
+  {
+   "path": "docs_src/handling_errors/tutorial002_py310.py",
+   "size": 404,
+   "sha256": "c022ef435507bef0a0dcb8c889b8c1a9d0abf48da9b83cb5f626ac5c9c3fd38d"
+  },
+  {
+   "path": "docs_src/handling_errors/tutorial003_py310.py",
+   "size": 626,
+   "sha256": "6d9cc868c5b98d899b1e199a7ee4ad0f0e914a56a6b265e88e635c05afb9e722"
+  },
+  {
+   "path": "docs_src/handling_errors/tutorial004_py310.py",
+   "size": 920,
+   "sha256": "441941d2fd7140375ca2b453652cedeea619d2eb1a12dd33cfece168b0973330"
+  },
+  {
+   "path": "docs_src/handling_errors/tutorial005_py310.py",
+   "size": 626,
+   "sha256": "1bcb5bf2f454c78eb11fea05198da4e0a174c1aebffec21cc321399b9f2d3a41"
+  },
+  {
+   "path": "docs_src/handling_errors/tutorial006_py310.py",
+   "size": 928,
+   "sha256": "ce86939ebe2b508226de8f01d760dd8e0c34ed6238b526306257c49eb274aa01"
+  },
+  {
+   "path": "docs_src/header_param_models/tutorial001_an_py310.py",
+   "size": 392,
+   "sha256": "75eae6b28791bf757d3ee0900f78941a3ff0196dd5fddc62d71c9d5be7944150"
+  },
+  {
+   "path": "docs_src/header_param_models/tutorial002_an_py310.py",
+   "size": 432,
+   "sha256": "c04ac28af71381b3e3c4ae5a0f2f7ca9957bfa3f2a7388c846dfb34831395efb"
+  },
+  {
+   "path": "docs_src/header_param_models/tutorial003_an_py310.py",
+   "size": 424,
+   "sha256": "a5a89638990ea383dba5fc67d348842a5850cd4e9c2f8619c4cce54ca14826ba"
+  },
+  {
+   "path": "docs_src/header_params/tutorial001_an_py310.py",
+   "size": 217,
+   "sha256": "638a78705c95fc524d5fcd970442dffd65591b623d01c3ee456ca98a29dd2415"
+  },
+  {
+   "path": "docs_src/header_params/tutorial002_an_py310.py",
+   "size": 261,
+   "sha256": "deb25cb19f089f242479e0ff91f018dbcbdfa0b49d00f850eb57aad3b4803f95"
+  },
+  {
+   "path": "docs_src/header_params/tutorial003_an_py310.py",
+   "size": 221,
+   "sha256": "ec5c54abfa44f67afb14d2ffbfce9daff6e88803d1458fc8b47c2dd9d28c5d31"
+  },
+  {
+   "path": "docs_src/json_base64_bytes/tutorial001_py310.py",
+   "size": 892,
+   "sha256": "8822992a3febec5c9e442a1f4fbf3ab70da0376b5ab08bbaf26fede5053343ea"
+  },
+  {
+   "path": "docs_src/metadata/tutorial001_1_py310.py",
+   "size": 774,
+   "sha256": "81a2b03bf4842c237ba12d1861b9bfb8dc854e2fe67c33b83d8b630ab96421ad"
+  },
+  {
+   "path": "docs_src/metadata/tutorial001_py310.py",
+   "size": 805,
+   "sha256": "9b7279fed766be1ec15ae64610961e53e883325055a61e43f06d54059a82b88e"
+  },
+  {
+   "path": "docs_src/metadata/tutorial002_py310.py",
+   "size": 154,
+   "sha256": "943c4dc2fe678f95f80c11573ee5177c3630dd4b7b4dab09ea1dc04c110da6da"
+  },
+  {
+   "path": "docs_src/metadata/tutorial003_py310.py",
+   "size": 161,
+   "sha256": "b8f358b495345ff80b8170d21ac9feee940b0f5a2e6dee022ac7ddf33027d401"
+  },
+  {
+   "path": "docs_src/metadata/tutorial004_py310.py",
+   "size": 693,
+   "sha256": "80d93fb0c211e9826da29be6c9483351bd12d1e7c6fc88db29f535943a5777be"
+  },
+  {
+   "path": "docs_src/middleware/tutorial001_py310.py",
+   "size": 365,
+   "sha256": "bf7786e78360628c04482e348ae8b749e54dff17b8448f6ec8971470d38e3800"
+  },
+  {
+   "path": "docs_src/openapi_callbacks/tutorial001_py310.py",
+   "size": 1333,
+   "sha256": "54ee7386c80d6a5c9a284591e0b0ca52d44f82fab40798eea5435040a262c50a"
+  },
+  {
+   "path": "docs_src/openapi_webhooks/tutorial001_py310.py",
+   "size": 550,
+   "sha256": "30196fdcea3854902687bba02684053af519ddb07c11fdcb60bf13948b4a0fa9"
+  },
+  {
+   "path": "docs_src/opentelemetry/tutorial001_py310.py",
+   "size": 143,
+   "sha256": "e315342e8a391de45042201b39fd985c65f9107559581e2516b06f97e433e0f4"
+  },
+  {
+   "path": "docs_src/opentelemetry/tutorial002_py310.py",
+   "size": 437,
+   "sha256": "b24cd23ef172357cd5323caaf7fe2257d6374dfebbd45095d2f6e8f77d04848d"
+  },
+  {
+   "path": "docs_src/opentelemetry/tutorial003_py310.py",
+   "size": 179,
+   "sha256": "f6b51de14ed1766dbad48090665c599d5a0db9f99d51e241ac3209897ab4318d"
+  },
+  {
+   "path": "docs_src/path_operation_advanced_configuration/tutorial001_py310.py",
+   "size": 167,
+   "sha256": "67b4b2b3e1edaaae45c0bf141c40d8976249608ed1df1e161ad8f92339497398"
+  },
+  {
+   "path": "docs_src/path_operation_advanced_configuration/tutorial002_py310.py",
+   "size": 293,
+   "sha256": "f71c19db5bf9ad22112f1a57639b4cbee691322e22fb81c90ca90de08467958b"
+  },
+  {
+   "path": "docs_src/path_operation_advanced_configuration/tutorial003_py310.py",
+   "size": 148,
+   "sha256": "941873b2122df66345d4f4cc14d4e9b5d16ac352b43e3aa9b38bea7425c85699"
+  },
+  {
+   "path": "docs_src/path_operation_advanced_configuration/tutorial004_py310.py",
+   "size": 661,
+   "sha256": "4818580a61b4b4ddc5fdde438c43158e30759c15cbb0fef8257008ff4f9ba349"
+  },
+  {
+   "path": "docs_src/path_operation_advanced_configuration/tutorial005_py310.py",
+   "size": 180,
+   "sha256": "5b1d169aba821d02d2dd3212d3d80c98b5e4ffad6d4c9fa331bd1fa500d54f5a"
+  },
+  {
+   "path": "docs_src/path_operation_advanced_configuration/tutorial006_py310.py",
+   "size": 1043,
+   "sha256": "55ae78a4c0de3ed0e077abaa51742502d873c70006390da799104fd6c1aacec5"
+  },
+  {
+   "path": "docs_src/path_operation_advanced_configuration/tutorial007_py310.py",
+   "size": 797,
+   "sha256": "52c8e22286f863df09629216edd6f76e6e8fceb2e743337bbb21ffda99ae5fa1"
+  },
+  {
+   "path": "docs_src/path_operation_configuration/tutorial001_py310.py",
+   "size": 350,
+   "sha256": "bc81403d3667db3c7cc62c0443dacf6e589a5705aebaf4f6086eb203490b5aa5"
+  },
+  {
+   "path": "docs_src/path_operation_configuration/tutorial002_py310.py",
+   "size": 524,
+   "sha256": "0688c1046350c50ae0eaec440aecfffc7f972d977c8fe046e6ad2c2e80e34d9c"
+  },
+  {
+   "path": "docs_src/path_operation_configuration/tutorial002b_py310.py",
+   "size": 323,
+   "sha256": "8764b356f82a85a84540e5c369ec724e386118a654fa86e8bcc4d7ddeb7a1b74"
+  },
+  {
+   "path": "docs_src/path_operation_configuration/tutorial003_py310.py",
+   "size": 457,
+   "sha256": "05e59a5f6f5653129ea398fa1451fa0c9496bce664a785bfe838dedfac27c4a9"
+  },
+  {
+   "path": "docs_src/path_operation_configuration/tutorial004_py310.py",
+   "size": 625,
+   "sha256": "4012acc36d2b2ebb0bf77be911885befac350f764899889d0a2df18fea90ce54"
+  },
+  {
+   "path": "docs_src/path_operation_configuration/tutorial005_py310.py",
+   "size": 681,
+   "sha256": "09c55b22c91db750a2a248e898892ed44599a45bf2d152993d11d8cf3fbd0b2a"
+  },
+  {
+   "path": "docs_src/path_operation_configuration/tutorial006_py310.py",
+   "size": 365,
+   "sha256": "5056b0c416045694765968b7a4f7c3dfbaffe4a1cee1947826b03add7b1ea8a1"
+  },
+  {
+   "path": "docs_src/path_params/tutorial001_py310.py",
+   "size": 138,
+   "sha256": "c10c9be93c07a592e1bc473ff53027152459d6565043d9fef5548089752fd0e2"
+  },
+  {
+   "path": "docs_src/path_params/tutorial002_py310.py",
+   "size": 143,
+   "sha256": "e315342e8a391de45042201b39fd985c65f9107559581e2516b06f97e433e0f4"
+  },
+  {
+   "path": "docs_src/path_params/tutorial003_py310.py",
+   "size": 236,
+   "sha256": "8e61b9cf938034484ada46a920f68e7ac54e28e9fc1b5305e591cd88247bdca2"
+  },
+  {
+   "path": "docs_src/path_params/tutorial003b_py310.py",
+   "size": 193,
+   "sha256": "f53e4f4f236d1f95ddfe9ae853ec2a99e2209b890946ba73044d6fc5eaebb056"
+  },
+  {
+   "path": "docs_src/path_params/tutorial004_py310.py",
+   "size": 156,
+   "sha256": "7d51acce2e571de480e402ae7cc1f3e383e3751f4a661becddd0001c0469fd71"
+  },
+  {
+   "path": "docs_src/path_params/tutorial005_py310.py",
+   "size": 546,
+   "sha256": "1c68f2c5549486ef0da4c198e5068e0a25227b0e87e53237aba9bd89b3ce6de8"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial001_an_py310.py",
+   "size": 375,
+   "sha256": "0d12ce071f0bcc1973064bcf7a95caa90f4547c59f6827d74688a24d78544d51"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial002_an_py310.py",
+   "size": 311,
+   "sha256": "5a45a08f382d3c3a060b5171568fff9f20889f6831fbdc7ef2c9b3eb4930c763"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial002_py310.py",
+   "size": 265,
+   "sha256": "7a11d3256e6140daf836ede85da6a6ba70e87f556da04d6d6a0d077f260ac37e"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial003_an_py310.py",
+   "size": 311,
+   "sha256": "0b4135c4181468c2915d2a5242fc7ff91e4d5ceb541094336b3ae3954e4d5ab6"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial003_py310.py",
+   "size": 268,
+   "sha256": "a3f144f675f2ab365b51911abd76255c2b9f78b08b374705aaf7813fd5ba1c99"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial004_an_py310.py",
+   "size": 317,
+   "sha256": "5d0de9ccb1ab36167f0a9e1cc4700ed1e9fff2c921c2a2293c7566b2803347bf"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial005_an_py310.py",
+   "size": 331,
+   "sha256": "b97ad7c6fbaebd3fcba4393670558f4b465c0981a3e5eb46e7cc540272464895"
+  },
+  {
+   "path": "docs_src/path_params_numeric_validations/tutorial006_an_py310.py",
+   "size": 447,
+   "sha256": "f6941282c5fd391d457d9e89679a6224e9882f6c54ab13da95701ba8142ebfb0"
+  },
+  {
+   "path": "docs_src/pydantic_v1_in_v2/tutorial001_an_py310.py",
+   "size": 124,
+   "sha256": "56139c1ce31067e6ee5b2f731077032d14a076eaa9e9fed35a20a19cc3b26438"
+  },
+  {
+   "path": "docs_src/pydantic_v1_in_v2/tutorial002_an_py310.py",
+   "size": 252,
+   "sha256": "1454ac1c0a4e551cff35f6d78cd17656bc2ccdc892f36a3a5c6006e950f94cef"
+  },
+  {
+   "path": "docs_src/pydantic_v1_in_v2/tutorial003_an_py310.py",
+   "size": 407,
+   "sha256": "1e00b193a436b1a5cd9deecaf6c1b31a49fd9cc43491a4e4069af318a0045be6"
+  },
+  {
+   "path": "docs_src/pydantic_v1_in_v2/tutorial004_an_py310.py",
+   "size": 360,
+   "sha256": "43d90608f70c884010d8984b4aee1e9845e1047b2449ad8ca04a80502de984cf"
+  },
+  {
+   "path": "docs_src/python_types/tutorial001_py310.py",
+   "size": 162,
+   "sha256": "7e0aec6cd29ab9831d0703b5f6d5674c825ac3cc8947d039f30697934ed93f2e"
+  },
+  {
+   "path": "docs_src/python_types/tutorial002_py310.py",
+   "size": 172,
+   "sha256": "d816e1f852c5b4cb90b2ad64bc5f304757c7f2c1e900601aea0c2a354384b034"
+  },
+  {
+   "path": "docs_src/python_types/tutorial003_py310.py",
+   "size": 119,
+   "sha256": "01e3456e1ae5a448238d2d379313728f493668a752425f2f45848d210f1a16b3"
+  },
+  {
+   "path": "docs_src/python_types/tutorial004_py310.py",
+   "size": 124,
+   "sha256": "d034531ea797bc39eec359c114f8fbfcc2d7493b9f924a4e5467aff24ad927a5"
+  },
+  {
+   "path": "docs_src/python_types/tutorial005_py310.py",
+   "size": 135,
+   "sha256": "2d6ad781186f6ddca6d47bb04cd555f67e060e21fada1ce33e1d4e3df5401d03"
+  },
+  {
+   "path": "docs_src/python_types/tutorial006_py310.py",
+   "size": 80,
+   "sha256": "6209b3ae55ed5297fb7de08dba704e4d5160b230f276f8e86ec1db90ca891653"
+  },
+  {
+   "path": "docs_src/python_types/tutorial007_py310.py",
+   "size": 99,
+   "sha256": "c2f63b40414097c2923eeabcf9e06ad6163265d8751a36afa38e0a0b4a53fb08"
+  },
+  {
+   "path": "docs_src/python_types/tutorial008_py310.py",
+   "size": 145,
+   "sha256": "a1b4e813afe09257103367466bb8ebba05151944ed7c1378c5be8a986a7f9cca"
+  },
+  {
+   "path": "docs_src/python_types/tutorial008b_py310.py",
+   "size": 51,
+   "sha256": "ddc9af8f84bf36a6f213e947bb3a9b1f3a6468536784e782cba20f589e80e077"
+  },
+  {
+   "path": "docs_src/python_types/tutorial009_py310.py",
+   "size": 131,
+   "sha256": "93444240869e299ea096053d9bf2ed470ca75efa0dac299b1692839e07ed64e8"
+  },
+  {
+   "path": "docs_src/python_types/tutorial010_py310.py",
+   "size": 144,
+   "sha256": "e482f69ff93d2d7b9668df7cec33e93809efe4362302ebf374416066055207b8"
+  },
+  {
+   "path": "docs_src/python_types/tutorial011_py310.py",
+   "size": 461,
+   "sha256": "384d3edc3ab67d335abe244771eba274b50280ebefb06128d975afde8361c7e5"
+  },
+  {
+   "path": "docs_src/python_types/tutorial013_py310.py",
+   "size": 127,
+   "sha256": "6067db57d990b0bd6a35f71205b0f8bd834d4f6a61adbe021fc57f937876044f"
+  },
+  {
+   "path": "docs_src/query_param_models/tutorial001_an_py310.py",
+   "size": 443,
+   "sha256": "c4871df1d1fb3f9b9e09490e1b4c4423065cd9ce4973a21769fe88e9d0c480ae"
+  },
+  {
+   "path": "docs_src/query_param_models/tutorial002_an_py310.py",
+   "size": 483,
+   "sha256": "0f288bf22e6bd78b3a43bb71069f021044d31c4e9abc5cd14d717ecefc91ed27"
+  },
+  {
+   "path": "docs_src/query_param_models/tutorial003_an_py310.py",
+   "size": 508,
+   "sha256": "161ac60fd390e91e52e38f317f7d1f962574e488269ab171057499666f8f6660"
+  },
+  {
+   "path": "docs_src/query_params/tutorial001_py310.py",
+   "size": 250,
+   "sha256": "6adfaedf0f557cb2ebe4b75b805c7f6c783c61e50845572f4020e888dac69489"
+  },
+  {
+   "path": "docs_src/query_params/tutorial002_py310.py",
+   "size": 219,
+   "sha256": "17d2182e85ea040919e7b965c428147f30a203f9c7d6e9d1da0bd55ae502f88b"
+  },
+  {
+   "path": "docs_src/query_params/tutorial003_py310.py",
+   "size": 374,
+   "sha256": "a2db585926ed6c203565561ae8e1bbf74b5e27d78cf50a2c58f139085957e2d8"
+  },
+  {
+   "path": "docs_src/query_params/tutorial004_py310.py",
+   "size": 436,
+   "sha256": "105c31a085865fd99bb5336c5e0168dbced8eed9ddf0f37f89cdfe5e8a657697"
+  },
+  {
+   "path": "docs_src/query_params/tutorial005_py310.py",
+   "size": 192,
+   "sha256": "c532cc66d7a9b90cf79773b7fcbdbe306a88353aac72bc72ffd7bc990d91c25f"
+  },
+  {
+   "path": "docs_src/query_params/tutorial006_py310.py",
+   "size": 269,
+   "sha256": "d39ad4b41b19a6af1528e46eccac3c149d6128e98a2cb935575cf85142c10c9a"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial001_py310.py",
+   "size": 239,
+   "sha256": "2b7731e82fe407fc7671fbe318c7b34e8ee4845641059605984d12d952d9bf92"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial002_an_py310.py",
+   "size": 309,
+   "sha256": "2e2cae5a6fe128a779f95956c8757f88ddd86821060a6f13941cfc26c9610e60"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial002_py310.py",
+   "size": 276,
+   "sha256": "e4e66e868ebba9893683a7aba20af83094c565751e663df8a780d0f08357b271"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial003_an_py310.py",
+   "size": 330,
+   "sha256": "c94ab9a267ca951bad9ad2969b0f5aabf4eeee687d7f995a8da74a5ce7725e71"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial004_an_py310.py",
+   "size": 368,
+   "sha256": "0015133df52af9ad8d550f24306e88cc965bf8ad1297c8f99fa4158c1ff04e71"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial005_an_py310.py",
+   "size": 309,
+   "sha256": "607c264e49d76a2cf7f151492904a17f48423efbaaf6e7b0f845ad5605ee8830"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial006_an_py310.py",
+   "size": 294,
+   "sha256": "a2d3a025f2b4864b2d73768ca28058caa18b3bbd276b1706a2d35e835d697a40"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial006c_an_py310.py",
+   "size": 301,
+   "sha256": "c7d8961cea44e552a4a650951821db9df024350c427027c8b70747bc9a3096f3"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial007_an_py310.py",
+   "size": 337,
+   "sha256": "8e79bb50c8a27dde121ab2a677e28cff3dd350292892f9f404cb089797c4c57c"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial008_an_py310.py",
+   "size": 498,
+   "sha256": "3ac8b6fcb5f587b222c83f1c6db01bd22e933d888e13f439d556b528524b9886"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial009_an_py310.py",
+   "size": 314,
+   "sha256": "adb6fd7928dd5e920bf4868a8088317661c4f84ba5ee0edf16ba034f220ad3f0"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial010_an_py310.py",
+   "size": 622,
+   "sha256": "c365909dda8da8a296b5534c9e58f73240a5d30dca46a65bee3b43e5b89748a2"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial011_an_py310.py",
+   "size": 224,
+   "sha256": "7c3e2fba61db5efe50b1fb4487035eee89ca319354ba5cd12288b754061e8e8d"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial012_an_py310.py",
+   "size": 227,
+   "sha256": "4b0ebb050444a27d4257c4c6de2ceec9dce293ae2dcbb49af6ca16d99affcc2a"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial013_an_py310.py",
+   "size": 210,
+   "sha256": "3bbe0bff7b257dfcb8ce3ab88dfc315504d40174fbb13f19a7e8b05f245ac7ca"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial014_an_py310.py",
+   "size": 331,
+   "sha256": "bf9f7d50c110b09f5315c1b7971a511566acc4e8a50b7df8894c9856c6ed40dd"
+  },
+  {
+   "path": "docs_src/query_params_str_validations/tutorial015_an_py310.py",
+   "size": 768,
+   "sha256": "359386768e5c88cb8d3a028b482fffbbcbebb7a9d78ffe229222ce9b907f58cf"
+  },
+  {
+   "path": "docs_src/request_files/tutorial001_02_an_py310.py",
+   "size": 505,
+   "sha256": "34a045fa42502d4d9d45bf00df6610dbd61db9af2fefc52b66a625c050f0e42d"
+  },
+  {
+   "path": "docs_src/request_files/tutorial001_03_an_py310.py",
+   "size": 421,
+   "sha256": "3b61fea1850d8452204c0f8e9c9f4f93a3f41297b08e2ce31757740701056e51"
+  },
+  {
+   "path": "docs_src/request_files/tutorial001_an_py310.py",
+   "size": 322,
+   "sha256": "66cf0179871ac472b209bfa902e10b17f3239dc195a737d34e096ca2e75bbc38"
+  },
+  {
+   "path": "docs_src/request_files/tutorial002_an_py310.py",
+   "size": 826,
+   "sha256": "1baf19baa107addb9f1f579868ff1c91aa093745aee09e7ec3964e2d83d94aa6"
+  },
+  {
+   "path": "docs_src/request_files/tutorial003_an_py310.py",
+   "size": 952,
+   "sha256": "2ab291c8bb6a5c1c1da07a2fb2e6bac5b216b590e2fecf564f002107348cc7d8"
+  },
+  {
+   "path": "docs_src/request_form_models/tutorial001_an_py310.py",
+   "size": 268,
+   "sha256": "60f771d48e0b803e31762a7c05ba688a5a11bae2b3f0f7ea79cee51fc074ac4c"
+  },
+  {
+   "path": "docs_src/request_form_models/tutorial002_an_py310.py",
+   "size": 307,
+   "sha256": "b24ae4e96efcb571bd9b22225f6ec811c45ac20844c08e3a75c19b3acd9f9fa7"
+  },
+  {
+   "path": "docs_src/request_forms/tutorial001_an_py310.py",
+   "size": 223,
+   "sha256": "d44d9cc0b9d12ddc085cbabec3df8cb4ae5f7cd5182def9ca611adc6300af6ec"
+  },
+  {
+   "path": "docs_src/request_forms_and_files/tutorial001_an_py310.py",
+   "size": 386,
+   "sha256": "b5851f71f8686b97c5ec67dde3fc2994a21e26406fd58d78ea86f0b3b9dfc29d"
+  },
+  {
+   "path": "docs_src/response_change_status_code/tutorial001_py310.py",
+   "size": 391,
+   "sha256": "cc2916314eab6f07a744315095e2fd00f2cdcde87ce3cd6224ffcf032896aa3f"
+  },
+  {
+   "path": "docs_src/response_cookies/tutorial001_py310.py",
+   "size": 344,
+   "sha256": "20e088e3f6cad720af9afcd30a9958d601e0eb530c80edde2b60e45997e10700"
+  },
+  {
+   "path": "docs_src/response_cookies/tutorial002_py310.py",
+   "size": 272,
+   "sha256": "c22a7c4c597b9052574f049019547b83fbeef9140a57456cab1573a5c90f7dfc"
+  },
+  {
+   "path": "docs_src/response_directly/tutorial001_py310.py",
+   "size": 474,
+   "sha256": "d13109e313bc878ba85f606fd247ffdc186a86ca606697bc65cb6a5a88b5a066"
+  },
+  {
+   "path": "docs_src/response_directly/tutorial002_py310.py",
+   "size": 354,
+   "sha256": "3f8847fe8bb068a4f0875c547c17f558459ae22f46e04f669659514d206bb73d"
+  },
+  {
+   "path": "docs_src/response_headers/tutorial001_py310.py",
+   "size": 309,
+   "sha256": "5c6bd5e2ddca15c83f03cec57fab08ea6b6d45c6763314e20a9076448bf5b9cf"
+  },
+  {
+   "path": "docs_src/response_headers/tutorial002_py310.py",
+   "size": 222,
+   "sha256": "7cf8b0ea27ada146dc03730990016a611e7170867e73d60f25a1b66625c46216"
+  },
+  {
+   "path": "docs_src/response_model/tutorial001_01_py310.py",
+   "size": 469,
+   "sha256": "1c543fb76ad6bff0a424fbbdd94e185cb43949970d39aaede0b44d5f5ff57d7e"
+  },
+  {
+   "path": "docs_src/response_model/tutorial001_py310.py",
+   "size": 537,
+   "sha256": "780e13196289168227c3a5b59c063e9637e796c7285347c4d875a5c956f3f599"
+  },
+  {
+   "path": "docs_src/response_model/tutorial002_py310.py",
+   "size": 318,
+   "sha256": "a370d1428ffcd8a85bb6a7c0ebb9df03b59389a556723319fdcd051963e64895"
+  },
+  {
+   "path": "docs_src/response_model/tutorial003_01_py310.py",
+   "size": 317,
+   "sha256": "b42cde7525d1b1877c67fba8a1b99fc68bdc452dbd1a1e5835ed36bc20168ed7"
+  },
+  {
+   "path": "docs_src/response_model/tutorial003_02_py310.py",
+   "size": 381,
+   "sha256": "2714bf1aaee30d7e73c0e5855d5154079b9bdf39ef13d93800f111370cd2853b"
+  },
+  {
+   "path": "docs_src/response_model/tutorial003_03_py310.py",
+   "size": 241,
+   "sha256": "a7da6882c20c39f6533c4f926463babc652343a4fe6f54ed9d27cbc36f06faca"
+  },
+  {
+   "path": "docs_src/response_model/tutorial003_04_py310.py",
+   "size": 352,
+   "sha256": "b2ef95cbeda4aa9e48bfe1e980c3fb0d3329090a72b8dc4865abd38be4b6f05c"
+  },
+  {
+   "path": "docs_src/response_model/tutorial003_05_py310.py",
+   "size": 373,
+   "sha256": "ebf21a204c0000a19c556b5ec36bb1078f3faed2a245fcf6c5fe453b3ceb50b0"
+  },
+  {
+   "path": "docs_src/response_model/tutorial003_py310.py",
+   "size": 431,
+   "sha256": "f0f863999159135b89dcbbc063e57e1c3c693e53c5cae2cfb0f540873525f3ec"
+  },
+  {
+   "path": "docs_src/response_model/tutorial004_py310.py",
+   "size": 595,
+   "sha256": "5903bb91bb7c84654e2fda58b13b443df4a6fd1fce9cd3e8c62e6f62a88ac9a1"
+  },
+  {
+   "path": "docs_src/response_model/tutorial005_py310.py",
+   "size": 816,
+   "sha256": "280e9186c9284cb4155551c05b76c03117e2a2bee4cdffd519d075137f548bb1"
+  },
+  {
+   "path": "docs_src/response_model/tutorial006_py310.py",
+   "size": 816,
+   "sha256": "8783dd5c462cda961ea0b2f6ed6d3aaac6ca66b6441c5ad3e091c108d9e1cbcd"
+  },
+  {
+   "path": "docs_src/response_status_code/tutorial001_py310.py",
+   "size": 145,
+   "sha256": "0315c8641f1ceeb35e89813bb09edb1d236c458c6c3f096184f5b3c2e0db044b"
+  },
+  {
+   "path": "docs_src/response_status_code/tutorial002_py310.py",
+   "size": 173,
+   "sha256": "b24731e628edfb200844448186a7b5ca6a8a72d49f00da253226b87e18a5383f"
+  },
+  {
+   "path": "docs_src/schema_extra_example/tutorial001_py310.py",
+   "size": 646,
+   "sha256": "954941c1af84ed36610b04c81e8643ecfda559acde6927a0a248bb0b62012531"
+  },
+  {
+   "path": "docs_src/schema_extra_example/tutorial002_py310.py",
+   "size": 479,
+   "sha256": "4d7a858c2bc411fa8c27c4c0ca4e833ea73e159d170301ec9f27f0adf8434e9e"
+  },
+  {
+   "path": "docs_src/schema_extra_example/tutorial003_an_py310.py",
+   "size": 673,
+   "sha256": "2b62a3c31c88908e1803295931ae1f1c32c4ff7b18eb85b4e2ed334de7365b41"
+  },
+  {
+   "path": "docs_src/schema_extra_example/tutorial004_an_py310.py",
+   "size": 917,
+   "sha256": "12f1e7458fa845143443855f07bd7b25dadbcf2d764c0be22dc2aac746badca8"
+  },
+  {
+   "path": "docs_src/schema_extra_example/tutorial005_an_py310.py",
+   "size": 1523,
+   "sha256": "a0ecb034853c70e22d89839dd6cb3eb2a418f9f49c75daee70bd1f8142222598"
+  },
+  {
+   "path": "docs_src/security/tutorial001_an_py310.py",
+   "size": 309,
+   "sha256": "5ab2af6e39293cbd409b6d9531e7ebb58f9c426d2f6de4f29bde298aeae4893d"
+  },
+  {
+   "path": "docs_src/security/tutorial002_an_py310.py",
+   "size": 761,
+   "sha256": "283118fd9e215a258a9bf844849f372dee27c823691b5f5e5387012ba593365f"
+  },
+  {
+   "path": "docs_src/security/tutorial003_an_py310.py",
+   "size": 2517,
+   "sha256": "281933ce3935deaf2dd9c8451be3d0556cd216703ccfb555208d1e4cea308bf7"
+  },
+  {
+   "path": "docs_src/security/tutorial004_an_py310.py",
+   "size": 4300,
+   "sha256": "03d45dd28cd48f78c0d641555913dc8d78daee62c43f1c6625d4250718f02ef6"
+  },
+  {
+   "path": "docs_src/security/tutorial005_an_py310.py",
+   "size": 5509,
+   "sha256": "c92250c94e43ed6925be98f1cbe61c8207e67cf11ffefb78fb845c5280272396"
+  },
+  {
+   "path": "docs_src/security/tutorial006_an_py310.py",
+   "size": 361,
+   "sha256": "88fd2c719371c99b72bc09d5b1d53a24587a0721c7b9f48887b7a90abe751904"
+  },
+  {
+   "path": "docs_src/security/tutorial007_an_py310.py",
+   "size": 1172,
+   "sha256": "6353cc7020169222debb21fdedc40cab78140bbd92f6266fabfe5a42ca9cd18a"
+  },
+  {
+   "path": "docs_src/separate_openapi_schemas/tutorial001_py310.py",
+   "size": 451,
+   "sha256": "f28903f1f327cd968ec4e2c2f65e91441cc2ad711a3674daf1df1a085cba0785"
+  },
+  {
+   "path": "docs_src/separate_openapi_schemas/tutorial002_py310.py",
+   "size": 486,
+   "sha256": "36456bbd371bed8b6d39f455c9cf27dd920c51bf17fb78273a40ae6b6b4e0149"
+  },
+  {
+   "path": "docs_src/server_sent_events/tutorial001_py310.py",
+   "size": 1112,
+   "sha256": "b809dd761e4ca6106aa5d1ac49f6beaa7320f328e31d12a3e7d7ef08f148af83"
+  },
+  {
+   "path": "docs_src/server_sent_events/tutorial002_py310.py",
+   "size": 686,
+   "sha256": "6abb8b2214c5a00f2d855d77ccc79a40c36ff52546ac85406ad6c51a3e8b6ff7"
+  },
+  {
+   "path": "docs_src/server_sent_events/tutorial003_py310.py",
+   "size": 518,
+   "sha256": "a4c8790fc19ee284f97303c78018f25f0073372b5fac1b1400d0a7f960c92629"
+  },
+  {
+   "path": "docs_src/server_sent_events/tutorial004_py310.py",
+   "size": 795,
+   "sha256": "489f9a7f06c381332af4132166d4561999b7dd4b1c108a00587295307d4ceb93"
+  },
+  {
+   "path": "docs_src/server_sent_events/tutorial005_py310.py",
+   "size": 528,
+   "sha256": "bfa3e1a61c6d52471249dae0cd4b803b6536f17a83bfb7a49a364e7bf093c859"
+  },
+  {
+   "path": "docs_src/settings/app01_py310/config.py",
+   "size": 183,
+   "sha256": "a6e40f2c1e1d56bae648463154085b9ac5cc7288fdb3c3a12d57a429f3db8ba3"
+  },
+  {
+   "path": "docs_src/settings/app01_py310/main.py",
+   "size": 267,
+   "sha256": "1fe29ca7674dbc1e3ed7a855c8616b98ce0b128d3e61d1d0102ebf15dc77066d"
+  },
+  {
+   "path": "docs_src/settings/app02_an_py310/config.py",
+   "size": 159,
+   "sha256": "801c153137938607863a5b453f2f34384889a145539225818b57de08c3093b1d"
+  },
+  {
+   "path": "docs_src/settings/app02_an_py310/main.py",
+   "size": 445,
+   "sha256": "ff640603032bc276cd9c93f593d4bf8bbb0b2fdd97abf7c0f181f2ced4c272d2"
+  },
+  {
+   "path": "docs_src/settings/app02_an_py310/test_main.py",
+   "size": 515,
+   "sha256": "cc6f4b806f7f19165a04a2a1008de1b5609e30d386003013e9d07627d45e99e8"
+  },
+  {
+   "path": "docs_src/settings/app03_an_py310/config.py",
+   "size": 235,
+   "sha256": "c864c6632736b98dc5fc06c1950017dc0013fa7cf37ea5b50df9e49269db3c94"
+  },
+  {
+   "path": "docs_src/settings/app03_an_py310/main.py",
+   "size": 451,
+   "sha256": "0428c7af52e2f10683598b0fabd5e8e0aefae720dcec57eff96a95901f5c85e5"
+  },
+  {
+   "path": "docs_src/settings/tutorial001_py310.py",
+   "size": 419,
+   "sha256": "be7edaa65333c934ddeeaca325814ab28f7edd197f81e5dfc0bcd609022664f3"
+  },
+  {
+   "path": "docs_src/sql_databases/tutorial001_an_py310.py",
+   "size": 1768,
+   "sha256": "4158ac3ad33a55c894ce80e68bd3bd7b8e3b8da4e0f2cb8d62a45fd9f4229ca7"
+  },
+  {
+   "path": "docs_src/sql_databases/tutorial002_an_py310.py",
+   "size": 2567,
+   "sha256": "a0fcbc4071e3c081f877a7ce5a570b60e508780624a87137cec4bd14874e510d"
+  },
+  {
+   "path": "docs_src/static_files/tutorial001_py310.py",
+   "size": 159,
+   "sha256": "968815810bb48e51e25bb62fdb07ce3a54aab1dfe14aa838edec4e4a5b244186"
+  },
+  {
+   "path": "docs_src/stream_data/tutorial001_py310.py",
+   "size": 2243,
+   "sha256": "00b247b22a7bf32280000c541d71927ae7215b4957d42eebca3fd6e80845b87a"
+  },
+  {
+   "path": "docs_src/stream_data/tutorial002_py310.py",
+   "size": 5717,
+   "sha256": "1c90aced01a7f57fe7686a7500ff32c1096be9e0724caa4467f5df4840804e39"
+  },
+  {
+   "path": "docs_src/stream_json_lines/tutorial001_py310.py",
+   "size": 936,
+   "sha256": "0dc3fe34ab453f8f45c7d6f94f105d9ad4d152e9ef860da0555cfb7c268a6cda"
+  },
+  {
+   "path": "docs_src/strict_content_type/tutorial001_py310.py",
+   "size": 231,
+   "sha256": "15afb6e09773c946b51fc28f9d4ac399a25fffa600c7402ebc498815aaec9a5f"
+  },
+  {
+   "path": "docs_src/sub_applications/tutorial001_py310.py",
+   "size": 274,
+   "sha256": "764a51c3e376f88929ebc779e7b848c89bab37b299ec562b56154182bdd9ee2a"
+  },
+  {
+   "path": "docs_src/templates/static/styles.css",
+   "size": 25,
+   "sha256": "ea1071274c154fcc6f6747d11f13d3770e1c9ea703a76cc022474c6e4a0617e5"
+  },
+  {
+   "path": "docs_src/templates/templates/item.html",
+   "size": 235,
+   "sha256": "c15145e8a288ce8f7061151196e5e094639d366a8b110605f205023e9a6d73da"
+  },
+  {
+   "path": "docs_src/templates/templates/item_path.html",
+   "size": 245,
+   "sha256": "86cc84ccad76e349ed82ea00899e75ffcc23d7a7c37e4affd0d5bc030b20570e"
+  },
+  {
+   "path": "docs_src/templates/tutorial001_py310.py",
+   "size": 521,
+   "sha256": "78bc615ab7d2c64c2c477c31498318609b75746c61b658b5a4209f0f2905a008"
+  },
+  {
+   "path": "docs_src/templates/tutorial002_py310.py",
+   "size": 526,
+   "sha256": "7cc5fb38409a1d1ab07533d0799ee5aa7463e20a62cf83704b2760a0abba4f82"
+  },
+  {
+   "path": "docs_src/using_request_directly/tutorial001_py310.py",
+   "size": 230,
+   "sha256": "cca55fa50223dfba42463047082af6ad5bbb3c76cdc449187cf00c0b23eedd07"
+  },
+  {
+   "path": "docs_src/websockets_/tutorial001_py310.py",
+   "size": 1432,
+   "sha256": "019a26f75f288635b7f5046b12e58858c0844e46ad1d524d760af7cb22bdbe5e"
+  },
+  {
+   "path": "docs_src/websockets_/tutorial002_an_py310.py",
+   "size": 2855,
+   "sha256": "31648bf5a0dbea36535a39ddd25f79eeaa509441cded81234298e89f28d39d67"
+  },
+  {
+   "path": "docs_src/websockets_/tutorial003_py310.py",
+   "size": 2549,
+   "sha256": "cd2cb212a5ece980adb8a47f279b9aea9a34785280d1451a027167ad49397e30"
+  },
+  {
+   "path": "docs_src/wsgi/tutorial001_py310.py",
+   "size": 426,
+   "sha256": "9680bb4c1c9f27fda310b23b49958f43283f4ffb10ac54ac1e6ddc1b7833eb5f"
+  },
+  {
+   "path": "fastapi/openapi/docs.py",
+   "size": 12425,
+   "sha256": "3dc8c7d129feca9f7b3b47b15e29dc1bc7a9b18ec04f2242e7aeb66cad4345aa"
+  }
+ ]
+}

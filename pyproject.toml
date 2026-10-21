@@ -22,7 +22,7 @@ recall = "recall.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-recall = ["py.typed", "migrations/*.sql"]
+recall = ["py.typed", "migrations/*.sql", "corpus/manifest.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
