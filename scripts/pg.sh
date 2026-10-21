@@ -31,11 +31,11 @@ start() {
         mv "$data.initdb.log" "$data/initdb.log"
     fi
     if running; then
-        echo "already running on port $port"
+        state="already running"
     else
         pg pg_ctl -D "$data" -l "$data/log" -w \
             -o "-p $port -c listen_addresses=localhost -c unix_socket_directories='$data'" start >/dev/null
-        echo "started on port $port"
+        state="started"
     fi
     for db in recall recall_test; do
         if [ -z "$(pg psql -h localhost -p "$port" -d postgres -Atc "select 1 from pg_database where datname = '$db'")" ]; then
@@ -46,6 +46,7 @@ start() {
         echo "the vector extension is not installed for $bin (brew install pgvector)" >&2
         exit 1
     fi
+    echo "$state on port $port"  # only once the databases exist and pgvector is there
 }
 
 case "${1:-}" in
