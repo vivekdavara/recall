@@ -66,6 +66,14 @@ FastAPI writes them inside fences (`` ```jinja `` then `{!../../docs_src/templat
 fence. An included file with a line that could close the fence is refused, so an include can't change the page's
 structure.
 
+**How do you test normalization beyond examples?**
+Property tests (`tests/test_normalize_properties.py`) build pages from known parts (text with tags, code spans and
+comments; code includes with options; raw includes in fences; the page's own fences holding `#`, `///`, `{*` and tag
+lines; admonitions, tabs, multi-line comments) and check what each part must become: the page's own fences come out
+unchanged and in order, each include adds one block, no build syntax, tag or comment survives outside code, every
+visible word survives, and a second pass changes nothing. Processing lines inside fences, or leaving markers alone,
+each fail it.
+
 **How do you know it handles every page?**
 `tests/test_real_corpus.py`: every one of the 125 pages normalizes, normalizing the output again changes nothing, and
 no include, admonition marker, HTML comment or tag is left outside code. A synthetic golden page covers every rule.
@@ -153,9 +161,23 @@ Without it, PostgreSQL 17's postmaster on this Mac refused to start ("postmaster
 startup"); the fix is a valid `LC_ALL` in the server's environment.
 
 **What does CI run?**
-Two jobs: ruff, `mypy --strict` and the tests against a `pgvector/pgvector:pg17` service container (trust
-authentication, so there is no password); and a corpus job that downloads the pinned archive from GitHub, verifies
-it, runs the real-corpus tests and prints the corpus sizes.
+Three jobs: ruff, `mypy --strict` and the tests against a `pgvector/pgvector:pg17` service container (trust
+authentication, so there is no password); a corpus job that downloads the pinned archive from GitHub, verifies it,
+runs the real-corpus tests and prints the corpus sizes; and a pg-script job that installs PostgreSQL 17 and pgvector
+from the PostgreSQL apt repository and runs `scripts/pg.sh` end to end. The last two set a variable that turns their
+tests' "skip if missing" into a failure, so a job can't pass by skipping.
+
+**How is a shell script tested?**
+`tests/test_pg_script.py` runs it on a throwaway cluster (`RECALL_PG_DATA` in a new directory, `RECALL_PG_PORT` a
+free port): start, start again, status, url, the locale and code point order, localhost only, pgvector, stop, status
+exit 3, a restart that keeps the data, and reset, plus reset refusing a directory that isn't a cluster. Its data
+directory is under the repository because the server's socket lives there and pytest's temporary paths are longer
+than a Unix socket path may be on macOS.
+
+**Did CI find anything the Mac didn't?**
+Yes, on the pg-script job's first run: `start` wrote initdb's log beside the data directory before creating it, so a
+data directory whose parent didn't exist failed. Here `.scratch/` already existed (the review worktree was in it); a
+fresh checkout doesn't have it. `start` now creates the parent, and the test starts in a parent that doesn't exist.
 
 ## What went wrong on day 1
 
