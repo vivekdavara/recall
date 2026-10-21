@@ -95,7 +95,7 @@ def test_includes_lists_each_file_once_in_order():
         "{* ../../docs_src/q/tutorial001.py *}\n```\n{!../../docs_src/t/item.html!}\n```\n"
         "{* ../../docs_src/q/tutorial001.py ln[1] *}\n```\n{* ../../docs_src/q/ignored.py *}\n```"
     )
-    assert includes("p.md", page) == ["docs_src/q/tutorial001.py", "docs_src/t/item.html"]
+    assert includes("p.md", page, read) == ["docs_src/q/tutorial001.py", "docs_src/t/item.html"]
 
 
 def test_admonitions_become_label_lines_and_their_closers_blank_lines():
@@ -156,10 +156,15 @@ def test_a_page_with_every_extension_normalizes_to_its_golden_file():
     assert normalize("golden/page.md", out, read_golden) == out
 
 
-def test_a_raw_include_outside_a_fence_is_inserted_as_is():
-    assert norm("Before\n{!../../docs_src/q/fenced.py!}\nAfter") == (
-        'Before\ndoc = """\n```\nnot a fence closer here\n```\n"""\nAfter'
-    )
+def test_a_raw_include_outside_a_fence_is_read_as_the_pages_own_text():
+    # Its fence is a fence, its tags go; its own include lines are not expanded (one level, like the build).
+    FILES["docs_src/q/part.md"] = "<b>Bold</b> part.\n\n```\n<i>code</i>\n```\n{!../../docs_src/t/item.html!}\n"
+    try:
+        assert norm("Before\n\n{!../../docs_src/q/part.md!}\nAfter") == (
+            "Before\n\nBold part.\n\n```\n<i>code</i>\n```\n{!../../docs_src/t/item.html!}\nAfter"
+        )
+    finally:
+        del FILES["docs_src/q/part.md"]
 
 
 def test_an_included_file_with_nul_is_refused():

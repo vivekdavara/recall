@@ -1,15 +1,17 @@
 """Turn a FastAPI documentation page into plain Markdown that reads like the rendered page.
 
-DESIGN.md "Normalization" is the specification. Outside fenced code: code includes become fenced blocks,
-admonitions and tabs become label lines, and HTML comments and tags are removed. Raw includes (`{!path!}`) are
-expanded everywhere, because FastAPI's pages put them inside fences. Heading lines are left alone: their ids are
-the chunker's anchors.
+DESIGN.md "Normalization" is the specification. One pass over the lines: fenced code is kept (raw includes, which
+FastAPI puts inside fences, are expanded there); HTML comments and <style>/<script> elements are dropped; in page
+text, code includes become fenced blocks, raw includes are read as page text, admonitions and tabs become label
+lines, and comments and tags go outside code spans. Heading ids stay in their heading lines: they are the chunker's
+anchors.
 """
 
 from __future__ import annotations
 
 import posixpath
 import re
+from collections import deque
 from collections.abc import Callable
 
 from recall import markdown
@@ -25,7 +27,6 @@ _RAW_INCLUDE = re.compile(r"^([ \t]*)\{!>?[ \t]*(\S+?)[ \t]*!\}[ \t]*$")
 # /// tip | Title, //// tab | Python 3.10+, and the closing /// or ////.
 _BLOCK_MARKER = re.compile(r"^([ \t]*)/{3,}(?:[ \t]+([A-Za-z]+))?(?:[ \t]*\|[ \t]*(.*?))?[ \t]*$")
 _TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
-_CODE_SPAN = re.compile(r"(`+)(.+?)(?<!`)\1(?!`)")
 
 _LANGUAGES = {".py": "python", ".html": "jinja", ".css": "css", ".js": "javascript", ".toml": "toml", ".sh": "bash"}
 
@@ -44,58 +45,97 @@ def include_path(target: str) -> str:
     return resolved
 
 
-def includes(page_path: str, text: str) -> list[str]:
-    """Every repository path the page includes, in order of first use."""
+def includes(page_path: str, text: str, read: Reader) -> list[str]:
+    """Every repository path the page includes, in order of first use: exactly the files normalize reads."""
     found: list[str] = []
-    for line, fenced in _lines(text):
-        target = None
-        m = _RAW_INCLUDE.match(line)
-        if m:
-            target = m.group(2)
-        elif not fenced:
-            c = _CODE_INCLUDE.match(line)
-            if c:
-                target = c.group(2)
-        if target is not None:
-            path = include_path(target)
-            if path not in found:
-                found.append(path)
+
+    def record(path: str) -> str:
+        if path not in found:
+            found.append(path)
+        return read(path)
+
+    normalize(page_path, text, record)
     return found
 
 
 def normalize(page_path: str, text: str, read: Reader) -> str:
-    """The page as plain Markdown. `read` returns an included file's text by its repository path."""
+    """The page as plain Markdown. `read` returns an included file's text by its repository path.
+
+    One pass over the lines, in order, in one of three states: inside a fenced code block (code: kept as is, but
+    a raw include is expanded), inside an HTML comment or a <style>/<script> element (dropped, up to its end), or
+    in page text. Whichever starts first wins, as in CommonMark: a fence inside a comment is part of the comment,
+    and a comment inside a fence is code.
+    """
     if "\x00" in text:
         raise NormalizeError(f"{page_path}: NUL character")
-    text = _strip_front_matter(text.replace("\r\n", "\n"))
+    text = _strip_front_matter(_prepare(text))
     out: list[str] = []
-    in_comment = False
-    for line, fenced in _lines(text):
-        raw = _RAW_INCLUDE.match(line)
-        if raw:
-            out.extend(_raw_include(page_path, raw.group(1), raw.group(2), read, inside_fence=fenced))
-            continue
-        if fenced:
+    # (line, included): lines a raw include brings in are read as the page's own text, but not searched for
+    # further includes (one level, as the documentation build does).
+    queue: deque[tuple[str, bool]] = deque((line, False) for line in text.split("\n"))
+    fence: tuple[str, int] | None = None
+    closer: re.Pattern[str] | None = None
+    while queue:
+        line, included = queue.popleft()
+        if fence is not None:
+            raw = None if included else _RAW_INCLUDE.match(line)
+            if raw:
+                out.extend(_raw_include(page_path, raw.group(1), raw.group(2), read, inside_fence=True))
+                continue
             out.append(line)
+            if markdown.closes(line, fence):
+                fence = None
             continue
-        if in_comment:
-            end = line.find("-->")
-            if end < 0:
+        if closer is not None:
+            m = closer.search(line)
+            if m is None:
                 out.append("")
                 continue
-            line = line[end + 3 :]
-            in_comment = False
-        line, in_comment = _strip_comments(line)
-        code = _CODE_INCLUDE.match(line)
-        if code:
-            out.extend(_code_include(page_path, code.group(1), code.group(2), code.group(3), read))
+            closer = None
+            rest, closer = _inline(line[m.end() :])
+            out.append(rest)
             continue
-        marker = _BLOCK_MARKER.match(line)
+        probe = _strip_closed_comments(line)
+        opener = markdown.fence_opener(line)
+        if opener is not None:
+            fence = opener
+            out.append(line)
+            continue
+        if not included:
+            raw = _RAW_INCLUDE.match(probe)
+            if raw:
+                lines = _raw_include(page_path, raw.group(1), raw.group(2), read, inside_fence=False)
+                queue.extendleft((ln, True) for ln in reversed(lines))
+                continue
+            code = _CODE_INCLUDE.match(probe)
+            if code:
+                out.extend(_code_include(page_path, code.group(1), code.group(2), code.group(3), read))
+                continue
+        marker = _BLOCK_MARKER.match(probe)
         if marker:
             out.append(_label(marker.group(1), marker.group(2), marker.group(3)))
             continue
-        out.append(_strip_tags(line))
+        if markdown.is_blank(line) or markdown.heading(probe) is not None:
+            processed, closer = _inline(line)
+            out.append(processed)
+            continue
+        # A paragraph: this line and the plain text lines after it, so that a code span may wrap onto the next line.
+        paragraph = [line]
+        while queue and queue[0][1] == included and _is_paragraph_line(queue[0][0], included):
+            paragraph.append(queue.popleft()[0])
+        processed, closer = _inline("\n".join(paragraph))
+        out.extend(processed.split("\n"))
     return "\n".join(out)
+
+
+def _is_paragraph_line(line: str, included: bool) -> bool:
+    """Whether a line continues a paragraph: not blank, and not a fence, heading, marker or include line."""
+    if markdown.is_blank(line) or markdown.fence_opener(line) is not None:
+        return False
+    probe = _strip_closed_comments(line)
+    if markdown.heading(probe) is not None or _BLOCK_MARKER.match(probe):
+        return False
+    return included or not (_RAW_INCLUDE.match(probe) or _CODE_INCLUDE.match(probe))
 
 
 def title(text: str, fallback: str) -> str:
@@ -199,27 +239,75 @@ def _label(indent: str, kind: str | None, label: str | None) -> str:
     return f"{indent}{name}: {label}" if label else f"{indent}{name}:"
 
 
-def _strip_comments(line: str) -> tuple[str, bool]:
-    """Remove HTML comments from a line; report whether one is left open at its end."""
-    out = ""
-    while True:
-        start = line.find("<!--")
-        if start < 0:
-            return out + line, False
-        end = line.find("-->", start + 4)
-        if end < 0:
-            return out + line[:start], True
-        out += line[:start]
-        line = line[end + 3 :]
+def _prepare(text: str) -> str:
+    """Line ends and the byte order mark, as the documentation build reads pages (utf-8-sig)."""
+    return text.removeprefix("﻿").replace("\r\n", "\n")
 
 
-def _strip_tags(line: str) -> str:
-    """Remove HTML tags outside inline code spans, keeping the text between them."""
+_CLOSED_COMMENT = re.compile(r"<!--(?:-?>|.*?-->)")
+
+
+def _strip_closed_comments(line: str) -> str:
+    """The line without the HTML comments that open and close on it, to recognise the block syntax around them.
+
+    Only comments: removing tags here could make syntax that isn't there ('<b>#</b> Title' is not a heading). A
+    line with backticks is left as it is, since its `<!--` may be code.
+    """
+    return _CLOSED_COMMENT.sub("", line) if "<!--" in line and "`" not in line else line
+
+
+_SPECIAL = re.compile(r"[`<]")
+_COMMENT_END = re.compile(r"-->")
+_RAW_ELEMENT = re.compile(r"<(style|script)\b[^>]*>", re.IGNORECASE)
+
+
+def _inline(text: str) -> tuple[str, re.Pattern[str] | None]:
+    """Page text with HTML comments, tags, and <style>/<script> elements removed, code spans left as they are.
+
+    Newlines inside what is removed are kept, so the text keeps its lines. If a comment or element is still open
+    at the end, returns the pattern that will close it; the caller drops lines until it matches.
+    """
     out: list[str] = []
-    pos = 0
-    for span in _CODE_SPAN.finditer(line):
-        out.append(_TAG.sub("", line[pos : span.start()]))
-        out.append(span.group())
-        pos = span.end()
-    out.append(_TAG.sub("", line[pos:]))
-    return "".join(out)
+    i = 0
+    while True:
+        m = _SPECIAL.search(text, i)
+        if m is None:
+            out.append(text[i:])
+            return "".join(out), None
+        j = m.start()
+        out.append(text[i:j])
+        if text[j] == "`":
+            run = len(text[j:]) - len(text[j:].lstrip("`"))
+            close = re.compile(rf"(?<!`)`{{{run}}}(?!`)").search(text, j + run)
+            # A code span: a run of backticks up to the next run of the same length (CommonMark 6.1); without
+            # one, the backticks are literal.
+            end = close.end() if close else j + run
+            out.append(text[j:end])
+            i = end
+            continue
+        if text.startswith("<!--", j):
+            # <!--> and <!---> are complete (empty) comments too (CommonMark 0.31), hence the search from j + 2.
+            close = _COMMENT_END.search(text, j + 2)
+            if close is None:
+                out.append("\n" * text.count("\n", j))
+                return "".join(out), _COMMENT_END
+            out.append("\n" * text.count("\n", j, close.end()))
+            i = close.end()
+            continue
+        element = _RAW_ELEMENT.match(text, j)
+        if element:
+            end_tag = re.compile(rf"</{element.group(1)}\s*>", re.IGNORECASE)
+            close = end_tag.search(text, element.end())
+            if close is None:
+                out.append("\n" * text.count("\n", j))
+                return "".join(out), end_tag
+            out.append("\n" * text.count("\n", j, close.end()))
+            i = close.end()
+            continue
+        tag = _TAG.match(text, j)
+        if tag:
+            out.append("\n" * tag.group().count("\n"))
+            i = tag.end()
+            continue
+        out.append("<")
+        i = j + 1

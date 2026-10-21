@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
 from archives import COMMIT, FILES, make_archive
 
 from recall.corpus import fetch
-from recall.corpus.fetch import CorpusError, Manifest
+from recall.corpus.fetch import CorpusError, Manifest, ManifestFile
 from recall.corpus.load import load
 from recall.corpus.normalize import NormalizeError
 
@@ -59,15 +60,30 @@ def test_only_files_in_the_manifest_can_be_included(corpus: tuple[Path, Manifest
 def test_a_page_that_isnt_utf8_is_an_error(tmp_path: Path):
     files = {**FILES, "docs/en/docs/bad.md": b"caf\xe9\n"}
     archive = make_archive(tmp_path / "b.tar.gz", files=files)
-    with pytest.raises(UnicodeDecodeError):
+    with pytest.raises(CorpusError, match=r"docs/en/docs/bad\.md is not UTF-8"):
         fetch.build_manifest(archive, commit=COMMIT)
 
 
-def test_an_included_file_that_isnt_utf8_is_an_error(tmp_path: Path):
-    # Pages are read as text when the manifest is built; included files are only hashed, so load is where it shows.
+def test_an_included_file_that_isnt_utf8_has_no_manifest(tmp_path: Path):
     files = {**FILES, "docs_src/a/t1.py": b"caf\xe9 = 1\n"}
-    archive = make_archive(tmp_path / "c.tar.gz", files=files)
-    manifest = fetch.build_manifest(archive, commit=COMMIT)
-    fetch.extract(archive, manifest, tmp_path / "corpus")
     with pytest.raises(CorpusError, match=r"docs_src/a/t1\.py is not UTF-8"):
-        load(tmp_path / "corpus", manifest)
+        fetch.build_manifest(make_archive(tmp_path / "c.tar.gz", files=files), commit=COMMIT)
+
+
+def test_load_refuses_a_listed_file_that_isnt_utf8(tmp_path: Path):
+    # Only a hand-made manifest can list one (build_manifest refuses it): load still says what is wrong.
+    files = {**FILES, "docs_src/a/t1.py": b"caf\xe9 = 1\n"}
+    good = fetch.build_manifest(make_archive(tmp_path / "g.tar.gz"), commit=COMMIT)
+    bad = Manifest(
+        good.repository,
+        good.tag,
+        good.commit,
+        tuple(
+            ManifestFile(f.path, len(files[f.path]), hashlib.sha256(files[f.path]).hexdigest()) if "t1" in f.path else f
+            for f in good.files
+        ),
+    )
+    archive = make_archive(tmp_path / "c.tar.gz", files=files)
+    fetch.extract(archive, bad, tmp_path / "corpus")
+    with pytest.raises(CorpusError, match=r"docs_src/a/t1\.py is not UTF-8"):
+        load(tmp_path / "corpus", bad)

@@ -129,12 +129,18 @@ def build_manifest(archive: Path, commit: str = source.COMMIT, tag: str = source
     with tarfile.open(archive, "r:*") as tar:
         members = _members(tar, commit)
         paths = {source.LICENSE_PATH}
+
+        def read(path: str) -> str:
+            try:
+                return _read_member(tar, members, path).decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise CorpusError(f"{path} is not UTF-8: {e}") from e
+
         for path in sorted(members):
             if source.page_of(path) is None:
                 continue
             paths.add(path)
-            text = _read_member(tar, members, path).decode("utf-8")
-            paths.update(normalize.includes(path, text))
+            paths.update(normalize.includes(path, read(path), read))
         files = tuple(_describe(p, _read_member(tar, members, p)) for p in sorted(paths))
     manifest = Manifest(source.REPOSITORY, tag, commit, files)
     manifest.check()

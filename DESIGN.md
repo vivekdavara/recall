@@ -73,27 +73,43 @@ FastAPI's Markdown uses extensions of its documentation build. `recall.corpus.no
 Markdown that reads the way the rendered page does. The normalized text is the document Recall stores, and every
 offset Recall reports (chunk spans, citations) is into it.
 
-First, **front matter** goes: a first line `---` up to the next `---` or `...` line is page settings for the build
-(`index.md` names its sponsors file, `advanced/templates.md` turns macros off), not text. A `---` anywhere else is a
-horizontal rule and stays. Then, outside fenced code blocks, in this order:
+First the page is read the way the build reads it: a UTF-8 byte order mark goes, CRLF becomes LF, a NUL is an error,
+and **front matter** goes (a first line `---` up to the next `---` or `...` line: page settings such as `index.md`'s
+sponsors file and `advanced/templates.md`'s `render_macros: false`; a `---` anywhere else is a horizontal rule and
+stays).
 
-1. **Includes** become fenced code blocks with the included file's text. `{* path ln[a:b,c] hl[...] title[...] *}`
-   includes a Python file (only the lines `ln` selects, if given; `hl` and `title` only change how the page is drawn,
-   so they are dropped); `{!path!}` and `{!> path!}` include any file, fenced with a language from its extension.
-   Paths are relative to `docs/en/`, the documentation build's root, and must resolve inside the extracted corpus. A
-   missing file is an error, not a silent gap.
-2. **Admonitions** (`/// tip`, `/// note | Technical Details`, `/// warning`, ...) become a bold label line (`**Tip**`,
-   `**Technical Details**`) followed by their body; the closing `///` is removed. **Tabs** (`//// tab | Python
-   3.10+`) become a label line (`Python 3.10+:`); their bodies are kept.
-3. **HTML comments** are removed. **HTML tags** are removed and their text kept (`<dfn title="...">parsing</dfn>`
-   becomes `parsing`); inline code spans are left untouched, so `` `<b>` `` survives.
-4. **Heading ids** (`## Defaults { #defaults }`) stay in the heading line. The chunker reads them as the section's
-   anchor and leaves them out of the title, so a citation can link to
-   `https://fastapi.tiangolo.com/tutorial/query-params/#defaults`.
+Then one pass over the lines, in order, in one of three states. Whichever starts first wins, as in CommonMark: a fence
+inside an HTML comment is part of the comment, and a comment inside a fence is code.
 
-Inside fenced code blocks nothing changes: a Python comment starting with `#` is not a heading, and `<b>` in an HTML
-template is code. Normalization is deterministic and idempotent (normalizing its own output changes nothing); both are
-tested.
+- **In a fenced code block:** the line is code and is kept as it is. The one exception is a raw include
+  (`{!path!}`, `{!> path!}`), which FastAPI's pages put inside fences to fill them: the included file's lines become
+  the fence's lines. A file with a line of only backticks or tildes, which could close the fence, is refused.
+- **In an HTML comment, or a `<style>` or `<script>` element:** the line is dropped, up to the comment's `-->` or the
+  element's end tag; what follows on that line is page text. (`index.md` has a `<style>` block whose CSS the rendered
+  page never shows.)
+- **In page text:**
+  1. A fence line opens a fenced block.
+  2. A **code include** (`{* path ln[a:b,c] hl[...] title[...] *}`, a line of its own) becomes a fenced block of the
+     Python file, with the lines `ln` selects (1-based, inclusive ranges, in increasing order, no overlap; a line
+     `...` stands for lines left out between ranges, as the rendered page marks them) and a fence longer than any
+     backtick run in the code; `hl` and `title` only change how the block is drawn, so they go. A **raw include**
+     outside a fence inserts the file's text, which is then read as the page's own text (the build's
+     markdown-include inserts it as Markdown); include lines inside an included file are not expanded (one level).
+  3. **Admonitions** (`/// tip`, `/// note | Technical Details`) become a label line (`Tip:`, `Note: Technical
+     Details`) followed by their body, and **tabs** (`//// tab | Python 3.10+`) become `Python 3.10+:`; a closing
+     `///` or `////` becomes a blank line, so blocks stay apart.
+  4. In everything else, headings included, **HTML comments** and **tags** are removed and the text between tags is
+     kept (`<dfn title="...">parsing</dfn>` becomes `parsing`), except inside **code spans**, which are found over
+     the whole paragraph, so a span may wrap onto the next line: `` `<b>` `` and `` `<!--` `` are code. A comment
+     that opens and closes on an include or marker line doesn't hide it. Heading ids (`## Defaults { #defaults }`)
+     stay in the heading line: the chunker reads them as the section's anchor and leaves them out of the title, so a
+     citation can link to `https://fastapi.tiangolo.com/tutorial/query-params/#defaults`.
+
+Includes are written relative to `docs/en/`, the build's root, and must resolve inside the repository; a missing one is
+an error, not a silent gap. `includes(page)` is defined as the files `normalize` reads, so the manifest and the
+normalizer can't disagree about what a page uses. Normalization is deterministic and idempotent: normalizing its own
+output changes nothing (tested on every real page, a golden page and generated pages), except for an include line
+inside an included file, which the first pass leaves as text.
 
 ## Chunking
 

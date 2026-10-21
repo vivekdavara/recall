@@ -61,11 +61,15 @@ def test_no_documentation_build_syntax_is_left_outside_code(documents: list[Docu
 
 def test_the_manifest_holds_exactly_what_the_pages_use(documents: list[Document]):
     manifest = fetch.load_manifest()
+
+    def read(path: str) -> str:
+        return CORPUS.joinpath(path).read_text(encoding="utf-8")
+
     used = {source.LICENSE_PATH}
     for page in manifest.pages():
         repo_path = source.repo_path_of(page)
         used.add(repo_path)
-        used.update(normalize.includes(page, CORPUS.joinpath(repo_path).read_text(encoding="utf-8")))
+        used.update(normalize.includes(page, read(repo_path), read))
     assert used == {f.path for f in manifest.files}
 
 
@@ -106,10 +110,10 @@ def test_the_chunks_are_the_ones_this_chunker_version_makes(documents: list[Docu
     # documents' content hashes, so ingest re-chunks those documents by itself: re-pin only.
     chunks = [c for d in documents for c in chunking.chunk_document(d.content)]
     assert chunking.CHUNKER_VERSION == 2
-    assert (len(chunks), sum(c.token_count for c in chunks)) == (1503, 217405)
+    assert (len(chunks), sum(c.token_count for c in chunks)) == (1503, 217390)
     # Every chunk's span, so a change that moves a cut without changing the totals shows too.
     spans = hashlib.sha256()
     for d in documents:
         for c in chunking.chunk_document(d.content):
             spans.update(f"{d.path}:{c.start}:{c.end}\n".encode())
-    assert spans.hexdigest() == "172bcefbe3c1dc0f5eb029b370956ba61471b02952b193e8284e24e5c75d5814"
+    assert spans.hexdigest() == "50b5796ff78bb1d486f25399d087ad2baee6af2f94d14a3c3feaf73fe3e4a917"
