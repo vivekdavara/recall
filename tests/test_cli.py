@@ -104,3 +104,19 @@ def test_manifest_goes_to_standard_output_without_out(
     monkeypatch.setattr(source, "TAG", "t")
     assert cli.main(["manifest", str(tmp_path / "a.tar.gz")]) == 0
     assert Manifest.from_json(capsys.readouterr().out) == manifest
+
+
+def test_show_prints_a_pages_chunks(setup: tuple[str, Manifest], capsys: pytest.CaptureFixture[str]):
+    url, _ = setup
+    assert cli.main(["fetch", "--url", url]) == 0
+    capsys.readouterr()
+    # The page is "# A { #a }\n\n```python\nx = 1\n```\n": the fence starts at 12, and its opener is 4 tokens.
+    assert cli.main(["show", "tutorial/a.md", "--max-tokens", "4"]) == 0
+    assert capsys.readouterr().out == (
+        "tutorial/a.md: A <https://fastapi.tiangolo.com/tutorial/a/>\n"
+        "\n--- chunk 0: A #a; [12:21], 4 tokens\n```python"
+        "\n\n--- chunk 1: A #a; [22:27], 3 tokens\nx = 1"
+        "\n\n--- chunk 2: A #a; [28:31], 3 tokens\n```\n"
+    )
+    assert cli.main(["show", "nope.md"]) == 1
+    assert "no page 'nope.md'" in capsys.readouterr().err

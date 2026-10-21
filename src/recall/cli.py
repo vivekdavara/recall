@@ -79,6 +79,23 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_show(args: argparse.Namespace) -> int:
+    documents = {d.path: d for d in load(corpus_dir(), fetch.load_manifest())}
+    doc = documents.get(args.page)
+    if doc is None:
+        print(
+            f"recall: no page {args.page!r} in the corpus (pages look like tutorial/query-params.md)", file=sys.stderr
+        )
+        return 1
+    print(f"{doc.path}: {doc.title} <{doc.url}>")
+    for c in chunking.chunk_document(doc.content, args.max_tokens):
+        where = " > ".join(c.heading_path) or "(before the first heading)"
+        anchor = f" #{c.anchor}" if c.anchor else ""
+        print(f"\n--- chunk {c.ordinal}: {where}{anchor}; [{c.start}:{c.end}], {c.token_count} tokens")
+        print(c.text)
+    return 0
+
+
 def cmd_migrate(args: argparse.Namespace) -> int:
     with db.connect() as conn:
         applied = db.migrate(conn)
@@ -120,6 +137,10 @@ def parser() -> argparse.ArgumentParser:
         c = sub.add_parser(name, help=text)
         c.add_argument("--max-tokens", type=positive, default=chunking.DEFAULT_MAX_TOKENS)
         c.set_defaults(run=run)
+    show = sub.add_parser("show", help="print one page's chunks, with their spans and heading paths")
+    show.add_argument("page", help="a page path, e.g. tutorial/query-params.md")
+    show.add_argument("--max-tokens", type=positive, default=chunking.DEFAULT_MAX_TOKENS)
+    show.set_defaults(run=cmd_show)
     sub.add_parser("migrate", help="apply the schema migrations").set_defaults(run=cmd_migrate)
     return p
 
