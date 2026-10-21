@@ -172,7 +172,7 @@ def test_download_refuses_an_archive_over_the_limit(archive: Path, tmp_path: Pat
 
 def test_a_page_whose_include_is_missing_has_no_manifest(tmp_path: Path):
     files = {k: v for k, v in FILES.items() if k != "docs_src/a/t1.py"}
-    with pytest.raises(CorpusError, match="no docs_src/a/t1.py"):
+    with pytest.raises(CorpusError, match=r"no docs_src/a/t1\.py"):
         fetch.build_manifest(make_archive(tmp_path / "i.tar.gz", files=files), commit=COMMIT)
 
 
