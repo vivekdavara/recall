@@ -80,8 +80,21 @@ def test_a_paragraph_before_a_fence_without_a_blank_line_is_its_own_block():
 
 
 def test_a_long_line_splits_at_spaces():
+    # Greedy packing gives a b c / d e f / g; the last cut then moves to even out the last two.
     doc = "a b c d e f g"
-    assert texts(chunk_document(doc, max_tokens=3)) == ["a b c", "d e f", "g"]
+    assert texts(chunk_document(doc, max_tokens=3)) == ["a b c", "d e", "f g"]
+
+
+def test_a_sections_last_two_chunks_are_evened_out():
+    # Greedy packing would end with a chunk holding only the closing fence (11 tokens, then 3).
+    lines = "\n".join(f"w{i}" for i in range(1, 9))
+    doc = f"```\n{lines}\n```\n\n# Next\n\nnext section"
+    assert texts(chunk_document(doc, max_tokens=12)) == ["```\nw1\nw2\nw3\nw4", "w5\nw6\nw7\nw8\n```", "next section"]
+
+
+def test_on_a_tie_the_last_cut_stays_where_greedy_packing_put_it():
+    doc = "one two three\n\nfour five\n\nsix seven eight"  # 3, 2, 3 tokens: 3 | 5 and 5 | 3 tie
+    assert texts(chunk_document(doc, max_tokens=5)) == ["one two three\n\nfour five", "six seven eight"]
 
 
 def test_a_run_too_long_for_a_chunk_splits_between_tokens():
@@ -233,6 +246,11 @@ def test_invariants_hold_on_random_documents(doc: Doc, max_tokens: int):
 
     # C7 deterministic.
     assert chunk_document(text, max_tokens) == chunks
+
+    # C8 maximal: two consecutive chunks of one section never fit in one.
+    for a, b in pairwise(chunks):
+        if not any(a.end <= hs and he <= b.start for hs, he in doc.headings):  # no heading between: one section
+            assert a.token_count + b.token_count > max_tokens, (a, b)
 
 
 @settings(max_examples=200, deadline=None)

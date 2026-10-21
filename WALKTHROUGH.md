@@ -109,13 +109,23 @@ citations.
 **What are the invariants?**
 C1 a chunk is exactly `document[start:end]`, starting and ending on text; C2 chunks are in order without overlap; C3
 every non-whitespace character outside heading lines is in a chunk; C4 every chunk has 1 to `max_tokens` tokens; C5 a
-chunk lies in one section with that section's heading path; C6 a fence that fits is never split; C7 deterministic.
+chunk lies in one section with that section's heading path; C6 a fence that fits is never split; C7 deterministic;
+C8 two consecutive chunks of one section never fit in one.
 
 **How are they tested?**
 Hypothesis builds random documents from known parts (headings, paragraphs, lists, fences containing `# comments`,
 blank lines and runs of the fence character too short to close it), so the test knows where every heading and fence
 is and checks each invariant against that, not against the chunker's own parse. The same checks run on every real
 page at two sizes.
+
+**Did greedy packing cause any problem?**
+Three chunks on the real corpus were only "```": a code block too big for one chunk was split greedily at line ends,
+the remainder was the closing fence, and the section ended there, so nothing absorbed it. Now the cut between a
+section's last two chunks moves to where the bigger is smallest. It can't change the count (the two still don't fit
+together, and the first still starts where it did), and it didn't: 1,503 chunks before and after, the smallest 3
+tokens before and 7 after. My first attempt split big blocks evenly on their own, which stopped their first lines
+filling the chunk before them and made 32 more chunks; I measured that and dropped it. C8 (two consecutive chunks of
+a section never fit in one) is the property that keeps the argument honest.
 
 **Why are heading lines not part of chunk text?**
 They are carried by the heading path, which day 2 prepends to what is embedded; keeping them in the text would put

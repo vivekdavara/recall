@@ -108,7 +108,10 @@ three steps:
 3. **Packing.** Blocks are packed greedily, in order, into chunks of at most `max_tokens` tokens. A block bigger than
    `max_tokens` alone is split at line ends, a line bigger than that at spaces, and a run of non-whitespace bigger
    than that (a 300-character URL, say) between two tokens; the pieces are packed greedily the same way. A chunk is
-   cut inside a run of non-whitespace only in that last case.
+   cut inside a run of non-whitespace only in that last case. Last, the cut between a section's last two chunks is
+   moved to where the bigger of the two is smallest (on a tie, the later cut), so a section doesn't end in a remainder
+   of a few tokens: greedy packing alone left three chunks that were only the closing fence of a long code block. The
+   move can't change the number of chunks: the two still don't fit in one, and the first still starts where it did.
 
 **Size measure.** A token is a run of word characters or one punctuation character (`\w+|[^\w\s]`). It is closer to
 the word pieces an embedding model sees than counting words is (`@app.get("/items/{item_id}")` is 14 tokens, not 1),
@@ -130,6 +133,7 @@ embeds. Overlap would also make the same sentence appear in two retrieved passag
 - **C5 Sections.** A chunk lies inside one section, and its heading path and anchor are that section's.
 - **C6 Code.** A fenced code block of at most `max_tokens` tokens is never split across chunks.
 - **C7 Deterministic.** The same document and settings give the same chunks.
+- **C8 Maximal.** Two consecutive chunks of one section never fit in one chunk together.
 
 ## Storage
 
@@ -228,7 +232,7 @@ flowchart LR
 
 - **Chunking:** example tests for each rule and property tests (Hypothesis) that generate random Markdown from known
   parts (headings, paragraphs, lists, fenced code with `#` lines, blank lines and non-closing fence runs inside, very
-  long lines and runs) and check C1 to C7 against what the generator knows, not against the chunker's own parse.
+  long lines and runs) and check C1 to C8 against what the generator knows, not against the chunker's own parse.
 - **Normalization:** one test per rule and error case; a golden file for a synthetic page that uses every extension;
   property tests over generated pages (the page's own code unchanged, one block per include, no build syntax, tags
   or comments left outside code, every visible word kept, idempotent).

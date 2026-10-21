@@ -1,6 +1,6 @@
 """Split a normalized Markdown document into chunks: sections at headings, blocks at blank lines, packed by size.
 
-DESIGN.md "Chunking" is the specification; the invariants C1 to C7 named below are defined there.
+DESIGN.md "Chunking" is the specification; the invariants C1 to C8 named below are defined there.
 """
 
 from __future__ import annotations
@@ -15,7 +15,8 @@ from recall import markdown
 DEFAULT_MAX_TOKENS = 256
 
 # Raise this whenever a change here can change any chunk: ingest then re-chunks every stored document.
-CHUNKER_VERSION = 1
+# 2: the last cut of each section is moved to even out its last two chunks.
+CHUNKER_VERSION = 2
 
 # A token is a run of word characters or one other non-whitespace character. Every non-whitespace character is in
 # exactly one token and no token contains whitespace, so cutting text at whitespace or between two tokens splits
@@ -160,15 +161,32 @@ def _trim(text: str, start: int, end: int, n: int) -> tuple[int, int, int]:
     return start, end, n
 
 
-def _pack(pieces: Iterator[tuple[int, int, int]], max_tokens: int) -> Iterator[tuple[int, int, int]]:
-    """Join consecutive pieces greedily while the total fits; what lies between pieces is whitespace."""
-    current: tuple[int, int, int] | None = None
-    for start, end, n in pieces:
-        if current is not None and current[2] + n <= max_tokens:
-            current = (current[0], end, current[2] + n)
-            continue
-        if current is not None:
-            yield current
-        current = (start, end, n)
-    if current is not None:
-        yield current
+def _pack(pieces: Iterator[tuple[int, int, int]], max_tokens: int) -> list[tuple[int, int, int]]:
+    """Join a section's consecutive pieces greedily while the total fits; then even out its last two chunks.
+
+    Greedy packing ends a section in whatever is left over, sometimes a few tokens (the closing fence of a long code
+    block), as a chunk of its own. So the cut between the section's last two chunks is moved to where the bigger of
+    the two is smallest. Both still fit; they still can't be one chunk (greedy packing found the second's first piece
+    didn't fit), and the first still starts where it did, so it can't join the chunk before it either. What lies
+    between pieces is whitespace.
+    """
+    groups: list[list[tuple[int, int, int]]] = []
+    total = 0
+    for piece in pieces:
+        if groups and total + piece[2] <= max_tokens:
+            groups[-1].append(piece)
+            total += piece[2]
+        else:
+            groups.append([piece])
+            total = piece[2]
+    if len(groups) >= 2:
+        tail = groups[-2] + groups[-1]
+        sizes = [p[2] for p in tail]
+        prefix = [0]
+        for n in sizes:
+            prefix.append(prefix[-1] + n)
+        whole = prefix[-1]
+        # On a tie, the later cut: the nearest to where greedy packing put it.
+        cut = min(range(1, len(tail)), key=lambda i: (max(prefix[i], whole - prefix[i]), -i))
+        groups[-2:] = [tail[:cut], tail[cut:]]
+    return [(g[0][0], g[-1][1], sum(p[2] for p in g)) for g in groups]

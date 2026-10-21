@@ -3,6 +3,7 @@ RECALL_REQUIRE_CORPUS=1, so there they fail rather than skip when the corpus is 
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from itertools import pairwise
@@ -83,6 +84,8 @@ def test_every_page_chunks_within_the_invariants(documents: list[Document], max_
             covered[c.start : c.end] = b"\x01" * (c.end - c.start)
         for a, b in pairwise(chunks):
             assert a.end <= b.start  # C2
+            if not any(a.end <= s.start and s.start <= b.start for s in sections):  # one section: C8
+                assert a.token_count + b.token_count > max_tokens, (d.path, a.ordinal)
         for i, ch in enumerate(text):  # C3
             if not covered[i] and not ch.isspace():
                 assert any(s <= i < e for s, e in heading_lines), (d.path, i)
@@ -102,5 +105,11 @@ def test_the_chunks_are_the_ones_this_chunker_version_makes(documents: list[Docu
     # re-chunks stored corpora) and re-pin them from the new output. A change to normalization changes the
     # documents' content hashes, so ingest re-chunks those documents by itself: re-pin only.
     chunks = [c for d in documents for c in chunking.chunk_document(d.content)]
-    assert chunking.CHUNKER_VERSION == 1
+    assert chunking.CHUNKER_VERSION == 2
     assert (len(chunks), sum(c.token_count for c in chunks)) == (1503, 217405)
+    # Every chunk's span, so a change that moves a cut without changing the totals shows too.
+    spans = hashlib.sha256()
+    for d in documents:
+        for c in chunking.chunk_document(d.content):
+            spans.update(f"{d.path}:{c.start}:{c.end}\n".encode())
+    assert spans.hexdigest() == "172bcefbe3c1dc0f5eb029b370956ba61471b02952b193e8284e24e5c75d5814"

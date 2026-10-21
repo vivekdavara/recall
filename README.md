@@ -47,7 +47,7 @@ flowchart LR
 ```
 src/recall/
   markdown.py             lines, fenced code blocks and ATX headings (the parts both stages need)
-  chunking.py             sections, blocks, greedy packing by tokens; invariants C1-C7
+  chunking.py             sections, blocks, greedy packing by tokens; invariants C1-C8
   corpus/source.py        the pinned source and which pages are kept
   corpus/fetch.py         download, the commit and manifest checks, all-or-nothing extraction
   corpus/manifest.json    the 421 files used, with sizes and SHA-256
@@ -93,7 +93,11 @@ numbers are deterministic, and CI's corpus job prints the same table from a fres
 | Normalized text | 972,582 characters |
 | Chunks | 1,503 |
 | Tokens (Recall's measure) | 217,405 |
-| Tokens a chunk | min 3, p50 142, p95 253, max 256; 27 chunks at the maximum |
+| Tokens a chunk | min 7, p50 147, p95 250, max 256; 20 chunks at the maximum |
+
+Before the last cut of each section was evened out (chunker version 1), the same 1,503 chunks had min 3, p50 142,
+p95 253, 27 at the maximum, and three chunks that were only a closing fence; chunks under 20 tokens went from 41 to
+30.
 
 The same commit's archive by tag and by commit id differ in bytes (18,018,516 and 18,023,996, since the top
 directory is named after what was asked for) and give the same manifest, which is why the files are pinned rather than
@@ -109,7 +113,7 @@ then 125 unchanged. Every stored chunk equals `substr(document.content, start + 
 `make check` runs ruff, `mypy --strict` and pytest: 124 tests at `4dfd206`, all passing here. In CI's test job the 7
 real-corpus tests skip (116 passed, 7 skipped at `40a7144`, line and branch coverage 98%), and its corpus job runs them.
 
-- **Chunking:** one example per rule, and Hypothesis properties for C1 to C7 over random documents built from known
+- **Chunking:** one example per rule, and Hypothesis properties for C1 to C8 over random documents built from known
   parts (headings, paragraphs, lists, fences with `#` lines, blank lines and non-closing fence runs inside), so the
   test knows where each heading and fence is; and the rules that need no structure over arbitrary text.
 - **Normalization:** one test per rule, the error cases, and a golden page that uses every extension.
