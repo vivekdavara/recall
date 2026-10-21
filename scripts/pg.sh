@@ -23,6 +23,7 @@ running() { [ -f "$data/postmaster.pid" ] && pg pg_ctl -D "$data" status >/dev/n
 
 start() {
     if [ ! -f "$data/PG_VERSION" ]; then
+        mkdir -p "$(dirname "$data")"  # initdb's log goes beside the data directory until it exists
         # The builtin C.UTF-8 locale sorts by code point on every platform, so text order here matches CI's
         # (the service container is initialised with the same arguments).
         pg initdb -D "$data" --auth=trust --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8 \

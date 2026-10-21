@@ -33,15 +33,15 @@ def free_port() -> int:
 def cluster() -> Iterator[tuple[dict[str, str], Path, int]]:
     # Under the repository, not the system temp directory: the socket lives in the data directory, and a Unix
     # socket path must be short (about 100 bytes on macOS); pytest's tmp_path is too long for it.
-    data = ROOT / ".scratch" / f"pg-{uuid.uuid4().hex[:8]}"
+    # A parent directory that doesn't exist yet, as in a fresh checkout (CI caught start failing on one).
+    data = ROOT / ".scratch" / f"pg-{uuid.uuid4().hex[:8]}" / "data"
     port = free_port()
     env = {**os.environ, "PG_BIN": PG_BIN, "RECALL_PG_PORT": str(port), "RECALL_PG_DATA": str(data)}
     try:
         yield env, data, port
     finally:
         subprocess.run([str(SCRIPT), "stop"], env=env, capture_output=True, timeout=60)
-        shutil.rmtree(data, ignore_errors=True)
-        Path(f"{data}.initdb.log").unlink(missing_ok=True)
+        shutil.rmtree(data.parent, ignore_errors=True)
 
 
 def run(env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
