@@ -120,6 +120,8 @@ def test_show_prints_a_pages_chunks(setup: tuple[str, Manifest], capsys: pytest.
         "\n\n--- chunk 1: A #a; [22:27], 3 tokens\nx = 1"
         "\n\n--- chunk 2: A #a; [28:31], 3 tokens\n```\n"
     )
+    assert cli.main(["show", "index.md"]) == 1  # not in this small corpus
+    capsys.readouterr()
     assert cli.main(["show", "nope.md"]) == 1
     assert "no page 'nope.md'" in capsys.readouterr().err
 
@@ -145,3 +147,16 @@ def test_a_page_that_cant_be_normalized_is_one_line(
     monkeypatch.setattr(source, "COMMIT", COMMIT)
     assert cli.main(["manifest", str(archive)]) == 1
     assert capsys.readouterr().err == f"recall: {PAGE}: line range 5:9 outside 1..1\n"
+
+
+def test_show_names_the_text_before_the_first_heading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    archive = make_archive(tmp_path / "p.tar.gz", files={**FILES, PAGE: b"Before any heading.\n"})
+    manifest = fetch.build_manifest(archive, commit=COMMIT, tag="t")
+    monkeypatch.setattr(fetch, "load_manifest", lambda: manifest)
+    monkeypatch.setenv("RECALL_DATA_DIR", str(tmp_path / "data"))
+    assert cli.main(["fetch", "--url", archive.as_uri()]) == 0
+    capsys.readouterr()
+    assert cli.main(["show", "tutorial/a.md"]) == 0
+    assert "--- chunk 0: (before the first heading); [0:19], 4 tokens\nBefore any heading.\n" in capsys.readouterr().out

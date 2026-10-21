@@ -237,3 +237,41 @@ def test_the_exclusions_are_the_designed_ones():
 def test_every_excluded_page_is_not_kept(page: str):
     assert source.page_of("docs/en/docs/" + page) is None
     assert source.page_of("docs/en/docs/tutorial/" + page) == "tutorial/" + page  # only at the top
+
+
+def test_a_link_where_the_corpus_should_be_is_replaced(archive: Path, manifest: Manifest, tmp_path: Path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keep.txt").write_text("not ours")
+    dest = tmp_path / "corpus"
+    dest.symlink_to(elsewhere)
+    assert fetch.verify(dest, manifest)[-1] == f"a link, not written by fetch: {dest}"
+    fetch.extract(archive, manifest, dest)
+    assert not dest.is_symlink() and fetch.verify(dest, manifest) == []
+    assert (elsewhere / "keep.txt").read_text() == "not ours"  # the link went, not what it pointed at
+    assert leftovers(tmp_path) == []
+
+
+def test_verify_reports_an_extra_link(archive: Path, manifest: Manifest, tmp_path: Path):
+    dest = tmp_path / "corpus"
+    fetch.extract(archive, manifest, dest)
+    (dest / "docs_src/a/alias.py").symlink_to(dest / "docs_src/a/t1.py")
+    assert fetch.verify(dest, manifest) == ["a link, not written by fetch: docs_src/a/alias.py"]
+
+
+def test_an_archive_that_isnt_there_is_a_corpus_error(tmp_path: Path, manifest: Manifest):
+    with pytest.raises(CorpusError, match="not a tar archive"):
+        fetch.extract(tmp_path / "missing.tar.gz", manifest, tmp_path / "c")
+
+
+def test_a_download_that_fails_is_a_corpus_error(tmp_path: Path):
+    with pytest.raises(CorpusError, match="can't download"):
+        fetch.download((tmp_path / "missing.tar.gz").as_uri(), tmp_path / "x")
+
+
+def test_a_dangling_link_where_the_corpus_should_be_is_replaced(archive: Path, manifest: Manifest, tmp_path: Path):
+    dest = tmp_path / "corpus"
+    dest.symlink_to(tmp_path / "gone")
+    fetch.extract(archive, manifest, dest)
+    assert not dest.is_symlink() and fetch.verify(dest, manifest) == []
+    assert leftovers(tmp_path) == []
