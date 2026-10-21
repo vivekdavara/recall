@@ -270,3 +270,7 @@ def test_the_escape_goes_after_the_indentation():
 def test_a_pages_own_include_right_after_a_text_line_is_expanded():
     assert norm("Text\n{!../../docs_src/t/item.html!}\nmore") == "Text\n\n{{ id }}\n\nmore"
     assert norm("Text\n{* ../../docs_src/q/crlf.py *}") == "Text\n```python\na = 1\nb = 2\n```"
+
+
+def test_a_self_closing_style_tag_is_an_element():
+    assert norm("a <style/>b { x: 1 }</style> c") == "a  c"

@@ -56,3 +56,11 @@ def test_lines_that_are_not_headings():
 def test_blank_means_whitespace_only():
     assert markdown.is_blank("") and markdown.is_blank(" \t\N{NO-BREAK SPACE}")
     assert not markdown.is_blank(" x ")
+
+
+def test_heading_whitespace_as_commonmark_has_it():
+    assert markdown.heading("# foo\t##") == markdown.Heading(1, "foo", None)  # a tab before the closing run
+    assert markdown.heading("# foo ##  \t") == markdown.Heading(1, "foo", None)  # whitespace after it
+    assert markdown.heading("#\tfoo") == markdown.Heading(1, "foo", None)  # a tab after the opening run
+    assert markdown.heading("# ##  ") == markdown.Heading(1, "", None)  # only a closing run, then spaces
+    assert markdown.heading("# foo#") == markdown.Heading(1, "foo#", None)  # no space: part of the title
