@@ -273,3 +273,14 @@ def test_any_text_is_chunked_within_the_rules(text: str, max_tokens: int):
     for i, ch in enumerate(text):
         if not covered[i] and not ch.isspace():
             assert any(gs <= i < ge for gs, ge in gaps), (i, ch)
+
+
+def test_a_run_that_fits_is_not_cut_between_tokens():
+    # The line is too big (5 tokens), so it splits at spaces; a.b (3 tokens) fits and stays whole.
+    assert texts(chunk_document("x y a.b", max_tokens=3)) == ["x y", "a.b"]
+
+
+def test_a_heading_on_the_last_line_has_an_empty_section_inside_the_text():
+    doc = "text\n# A"
+    last = sections(doc)[-1]
+    assert (last.heading_path, last.start, last.end) == (("A",), len(doc), len(doc))

@@ -204,3 +204,19 @@ def test_a_file_that_isnt_an_archive_is_a_corpus_error(tmp_path: Path, manifest:
     (tmp_path / "x.tar.gz").write_text("<html>rate limited</html>")
     with pytest.raises(CorpusError, match="not a tar archive"):
         fetch.extract(tmp_path / "x.tar.gz", manifest, tmp_path / "c")
+
+
+def test_a_member_named_to_escape_is_never_written(archive: Path, manifest: Manifest, tmp_path: Path):
+    # Members are read by the manifest's paths, so a member whose name climbs out is simply never used.
+    evil = tarfile.TarInfo("fastapi-x/../../escaped.txt")
+    evil.size = 4
+    dest = tmp_path / "deep" / "corpus"
+    fetch.extract(make_archive(tmp_path / "e.tar.gz", extra=[evil]), manifest, dest)
+    assert fetch.verify(dest, manifest) == []
+    assert not list(tmp_path.rglob("escaped.txt"))
+
+
+@pytest.mark.parametrize("page", sorted(source.EXCLUDED_PAGES))
+def test_every_excluded_page_is_not_kept(page: str):
+    assert source.page_of("docs/en/docs/" + page) is None
+    assert source.page_of("docs/en/docs/tutorial/" + page) == "tutorial/" + page  # only at the top

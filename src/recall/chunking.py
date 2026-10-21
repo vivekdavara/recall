@@ -86,7 +86,8 @@ def chunk_document(text: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> list[Chun
     for section in sections(text):
         first = bisect.bisect_left(starts, section.start)
         last = bisect.bisect_left(starts, section.end, lo=first)
-        body = [ln for ln in lines[first:last] if ln.end <= section.end]
+        # Lines don't overlap, and a section ends where a heading line starts: each of these ends inside it.
+        body = lines[first:last]
         for start, end, n in _pack(_pieces(text, body, max_tokens), max_tokens):
             chunks.append(
                 Chunk(

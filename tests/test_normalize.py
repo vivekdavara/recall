@@ -186,3 +186,40 @@ def test_a_rule_line_is_not_front_matter():
     assert norm("Text\n\n---\n\nMore\n---\n") == "Text\n\n---\n\nMore\n---\n"
     assert norm("---\nnot closed\n") == "---\nnot closed\n"
     assert norm(" ---\na: 1\n---\nx") == " ---\na: 1\n---\nx"
+
+
+def test_blank_lines_of_an_indented_code_include_stay_empty():
+    out = norm("* step\n\n    {* ../../docs_src/q/tutorial001.py ln[1:3] *}\n")
+    assert out == "* step\n\n    ```python\n    from fastapi import FastAPI\n\n    app = FastAPI()\n    ```\n"
+
+
+def test_overlapping_line_ranges_are_errors():
+    with pytest.raises(NormalizeError, match="out of order"):
+        norm("{* ../../docs_src/q/tutorial001.py ln[1:3,3:5] *}")
+
+
+def test_a_raw_include_with_a_tilde_fence_line_is_refused_inside_a_fence():
+    FILES["docs_src/q/tilde.md"] = "a\n~~~\nb\n"
+    try:
+        with pytest.raises(NormalizeError, match="close its fence"):
+            norm("```\n{!../../docs_src/q/tilde.md!}\n```")
+    finally:
+        del FILES["docs_src/q/tilde.md"]
+
+
+def test_a_quoted_admonition_title_loses_its_quotes():
+    assert norm('/// note | "Technical Details"\n\nx\n\n///') == "Note: Technical Details\n\nx\n\n"
+
+
+def test_an_include_that_resolves_to_the_parent_of_the_repository_is_refused():
+    with pytest.raises(NormalizeError, match="outside the repository"):
+        include_path("../../..")
+
+
+def test_an_empty_level_one_heading_is_not_the_title():
+    assert title("#\n\n# Real { #real }\n", "x.md") == "Real"
+
+
+def test_the_shortest_comments_are_complete():
+    # CommonMark 0.31: <!--> and <!---> are comments; what follows them is text.
+    assert norm("a <!--> b <!---> c") == "a  b  c"

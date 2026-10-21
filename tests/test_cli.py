@@ -32,6 +32,7 @@ def test_fetch_verify_and_stats(setup: tuple[str, Manifest], capsys: pytest.Capt
     assert cli.main(["stats", "--max-tokens", "4"]) == 0
     out = capsys.readouterr().out
     assert "documents       1" in out and "chunks          3 (max_tokens 4)" in out
+    assert "tokens a chunk  min 3 / p50 3 / p95 4 / max 4\nchunks at max   1\n" in out
 
     (tmp_path / "data/corpus/LICENSE").write_text("changed")
     assert cli.main(["verify"]) == 1
