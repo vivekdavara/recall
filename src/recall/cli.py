@@ -8,6 +8,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+import psycopg
+
 from recall import chunking, db
 from recall.corpus import fetch, source
 from recall.corpus.fetch import CorpusError
@@ -158,6 +160,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         code: int = args.run(args)
     except (CorpusError, NormalizeError) as e:
         print(f"recall: {e}", file=sys.stderr)
+        return 1
+    except psycopg.OperationalError as e:
+        print(f"recall: can't use the database ({db.database_url()}): {e}".rstrip(), file=sys.stderr)
         return 1
     return code
 

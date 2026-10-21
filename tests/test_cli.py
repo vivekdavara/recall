@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import socket
 from pathlib import Path
 
 import pytest
-from archives import COMMIT, make_archive
+from archives import COMMIT, FILES, PAGE, make_archive
 from conftest import TEST_DATABASE_URL
 
 from recall import cli
@@ -120,3 +121,25 @@ def test_show_prints_a_pages_chunks(setup: tuple[str, Manifest], capsys: pytest.
     )
     assert cli.main(["show", "nope.md"]) == 1
     assert "no page 'nope.md'" in capsys.readouterr().err
+
+
+def test_a_database_that_isnt_there_is_one_line_not_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    with socket.socket() as s:  # a port nothing listens on
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.setenv("RECALL_DATABASE_URL", f"postgresql://localhost:{port}/recall?connect_timeout=2")
+    assert cli.main(["migrate"]) == 1
+    assert capsys.readouterr().err.startswith("recall: can't use the database")
+
+
+def test_a_page_that_cant_be_normalized_is_one_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    # Building a manifest normalizes every page (to learn what it includes), so this is where a bad page shows.
+    files = {**FILES, PAGE: b"# A\n\n{* ../../docs_src/a/t1.py ln[5:9] *}\n"}
+    archive = make_archive(tmp_path / "bad.tar.gz", files=files)
+    monkeypatch.setattr(source, "COMMIT", COMMIT)
+    assert cli.main(["manifest", str(archive)]) == 1
+    assert capsys.readouterr().err == f"recall: {PAGE}: line range 5:9 outside 1..1\n"

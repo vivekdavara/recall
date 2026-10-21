@@ -92,6 +92,7 @@ def _members(tar: tarfile.TarFile, commit: str) -> dict[str, tarfile.TarInfo]:
     if declared != commit:
         raise CorpusError(f"the archive declares commit {declared!r}, not the pinned {commit}")
     members: dict[str, tarfile.TarInfo] = {}
+    directories: set[str] = set()
     top = None
     for member in tar.getmembers():
         head, _, rest = member.name.partition("/")
@@ -99,11 +100,16 @@ def _members(tar: tarfile.TarFile, commit: str) -> dict[str, tarfile.TarInfo]:
             top = head
         if head != top:
             raise CorpusError(f"archive member outside the top directory {top!r}: {member.name!r}")
-        if not rest or member.isdir():
+        rest = rest.rstrip("/")
+        if not rest:
             continue
-        if rest in members:
+        # A path may name a directory more than once, but not a file twice, nor a file and a directory.
+        if rest in members or (rest in directories and not member.isdir()):
             raise CorpusError(f"archive has two members for {rest!r}")
-        members[rest] = member
+        if member.isdir():
+            directories.add(rest)
+        else:
+            members[rest] = member
     return members
 
 
@@ -124,9 +130,16 @@ def _describe(path: str, data: bytes) -> ManifestFile:
     return ManifestFile(path, len(data), hashlib.sha256(data).hexdigest())
 
 
+def _open(archive: Path) -> tarfile.TarFile:
+    try:
+        return tarfile.open(archive, "r:*")
+    except (tarfile.TarError, OSError) as e:
+        raise CorpusError(f"{archive} is not a tar archive: {e}") from e
+
+
 def build_manifest(archive: Path, commit: str = source.COMMIT, tag: str = source.TAG) -> Manifest:
     """The manifest for an archive: the kept pages, every file they include, and the license."""
-    with tarfile.open(archive, "r:*") as tar:
+    with _open(archive) as tar:
         members = _members(tar, commit)
         paths = {source.LICENSE_PATH}
 
@@ -152,7 +165,7 @@ def extract(archive: Path, manifest: Manifest, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))
     try:
-        with tarfile.open(archive, "r:*") as tar:
+        with _open(archive) as tar:
             members = _members(tar, manifest.commit)
             for expected in manifest.files:
                 data = _read_member(tar, members, expected.path)
@@ -170,13 +183,24 @@ def extract(archive: Path, manifest: Manifest, dest: Path) -> None:
 
 
 def _replace(staging: Path, dest: Path) -> None:
+    """Put staging where dest is. If that fails, dest is put back as it was. One fetch at a time (DESIGN.md)."""
     old = None
-    if dest.exists():
-        old = dest.with_name(f".{dest.name}.old-{os.getpid()}")
+    if dest.exists() or dest.is_symlink():
+        old = Path(tempfile.mkdtemp(prefix=f".{dest.name}.old.", dir=dest.parent)) / dest.name
         dest.rename(old)
-    staging.rename(dest)
+    try:
+        staging.rename(dest)
+    except BaseException:
+        if old is not None:
+            old.rename(dest)
+            old.parent.rmdir()
+        raise
     if old is not None:
-        shutil.rmtree(old)
+        if old.is_dir() and not old.is_symlink():
+            shutil.rmtree(old)
+        else:
+            old.unlink()
+        old.parent.rmdir()
 
 
 def verify(dest: Path, manifest: Manifest) -> list[str]:
@@ -190,23 +214,32 @@ def verify(dest: Path, manifest: Manifest) -> list[str]:
             continue
         if _describe(expected.path, target.read_bytes()) != expected:
             problems.append(f"changed: {expected.path}")
-    if dest.is_dir():
-        for found in sorted(p for p in dest.rglob("*") if not p.is_dir()):
+    if dest.is_dir() and not dest.is_symlink():
+        for found in sorted(dest.rglob("*")):
             rel = found.relative_to(dest).as_posix()
-            if rel not in listed:
+            if found.is_symlink():
+                # fetch writes no links; one could stand for a whole directory whose files nobody checks.
+                if rel not in listed:
+                    problems.append(f"a link, not written by fetch: {rel}")
+            elif not found.is_dir() and rel not in listed:
                 problems.append(f"not in the manifest: {rel}")
+    elif dest.is_symlink():
+        problems.append(f"a link, not written by fetch: {dest}")
     return problems
 
 
 def download(url: str, to: Path, max_bytes: int = MAX_ARCHIVE_BYTES) -> None:
     """Stream url to a file, refusing more than max_bytes."""
     total = 0
-    with urllib.request.urlopen(url, timeout=60) as response, open(to, "wb") as out:
-        while chunk := response.read(1 << 16):
-            total += len(chunk)
-            if total > max_bytes:
-                raise CorpusError(f"{url} is larger than {max_bytes} bytes")
-            out.write(chunk)
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response, open(to, "wb") as out:
+            while chunk := response.read(1 << 16):
+                total += len(chunk)
+                if total > max_bytes:
+                    raise CorpusError(f"{url} is larger than {max_bytes} bytes")
+                out.write(chunk)
+    except OSError as e:  # URLError and HTTPError are OSErrors
+        raise CorpusError(f"can't download {url}: {e}") from e
 
 
 def fetch(dest: Path, manifest: Manifest, url: str = source.ARCHIVE_URL) -> bool:

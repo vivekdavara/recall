@@ -174,3 +174,33 @@ def test_which_paths_are_kept_pages():
 
 def test_verify_of_a_corpus_never_fetched_lists_every_file_as_missing(manifest: Manifest, tmp_path: Path):
     assert fetch.verify(tmp_path / "nothing", manifest) == [f"missing: {f.path}" for f in manifest.files]
+
+
+@pytest.mark.parametrize("directory_first", [True, False])
+def test_a_directory_and_a_file_at_one_path_fail(tmp_path: Path, manifest: Manifest, directory_first: bool):
+    d = tarfile.TarInfo("fastapi-x/LICENSE")
+    d.type = tarfile.DIRTYPE
+    files = {k: v for k, v in FILES.items() if k != "LICENSE"}
+    f = tarfile.TarInfo("fastapi-x/LICENSE")
+    f.size = 4
+    extra = [d, f] if directory_first else [f, d]
+    with pytest.raises(CorpusError, match="two members"):
+        fetch.extract(make_archive(tmp_path / "df.tar.gz", files=files, extra=extra), manifest, tmp_path / "c")
+
+
+def test_verify_reports_a_listed_file_replaced_by_a_link_to_the_same_bytes(
+    archive: Path, manifest: Manifest, tmp_path: Path
+):
+    dest = tmp_path / "corpus"
+    fetch.extract(archive, manifest, dest)
+    copy = tmp_path / "copy"
+    copy.write_bytes((dest / "LICENSE").read_bytes())
+    (dest / "LICENSE").unlink()
+    (dest / "LICENSE").symlink_to(copy)
+    assert fetch.verify(dest, manifest) == ["missing: LICENSE"]
+
+
+def test_a_file_that_isnt_an_archive_is_a_corpus_error(tmp_path: Path, manifest: Manifest):
+    (tmp_path / "x.tar.gz").write_text("<html>rate limited</html>")
+    with pytest.raises(CorpusError, match="not a tar archive"):
+        fetch.extract(tmp_path / "x.tar.gz", manifest, tmp_path / "c")
