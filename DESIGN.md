@@ -77,8 +77,9 @@ Outside fenced code blocks, in this order:
    3.10+`) become a label line (`Python 3.10+:`); their bodies are kept.
 3. **HTML comments** are removed. **HTML tags** are removed and their text kept (`<dfn title="...">parsing</dfn>`
    becomes `parsing`); inline code spans are left untouched, so `` `<b>` `` survives.
-4. **Heading ids** (`## Defaults { #defaults }`) are removed from the heading and kept as the section's anchor, so a
-   citation can link to `https://fastapi.tiangolo.com/tutorial/query-params/#defaults`.
+4. **Heading ids** (`## Defaults { #defaults }`) stay in the heading line. The chunker reads them as the section's
+   anchor and leaves them out of the title, so a citation can link to
+   `https://fastapi.tiangolo.com/tutorial/query-params/#defaults`.
 
 Inside fenced code blocks nothing changes: a Python comment starting with `#` is not a heading, and `<b>` in an HTML
 template is code. Normalization is deterministic and idempotent (normalizing its own output changes nothing); both are
@@ -95,7 +96,9 @@ three steps:
 2. **Blocks.** A section's body splits at blank lines into blocks, except that a fenced code block is one block, blank
    lines and all.
 3. **Packing.** Blocks are packed greedily, in order, into chunks of at most `max_tokens` tokens. A block bigger than
-   `max_tokens` alone is split at line ends, and a line bigger than that at spaces; a chunk is never cut inside a word.
+   `max_tokens` alone is split at line ends, a line bigger than that at spaces, and a run of non-whitespace bigger
+   than that (a 300-character URL, say) between two tokens; the pieces are packed greedily the same way. A chunk is
+   cut inside a run of non-whitespace only in that last case.
 
 **Size measure.** A token is a run of word characters or one punctuation character (`\w+|[^\w\s]`). It is closer to
 the word pieces an embedding model sees than counting words is (`@app.get("/items/{item_id}")` is 14 tokens, not 1),
@@ -109,7 +112,8 @@ embeds. Overlap would also make the same sentence appear in two retrieved passag
 
 **Invariants** (each has a test, most of them a property test over random Markdown):
 
-- **C1 Verbatim.** A chunk's text is exactly `document[start:end]`, so a citation's span shows what was retrieved.
+- **C1 Verbatim.** A chunk's text is exactly `document[start:end]`, so a citation's span shows what was retrieved,
+  and it starts and ends with a non-whitespace character.
 - **C2 Order.** Chunks are in document order and do not overlap: each starts at or after the previous one's end.
 - **C3 Coverage.** Every non-whitespace character of the document is in exactly one chunk, except heading lines.
 - **C4 Size.** Every chunk has at least 1 and at most `max_tokens` tokens.
@@ -122,7 +126,7 @@ embeds. Overlap would also make the same sentence appear in two retrieved passag
 PostgreSQL 17 with pgvector holds everything. One database for documents, chunks, vectors and full-text indexes means
 one transactional ingest, and day 2's hybrid retrieval is one SQL query instead of a join across two systems.
 
-Day 1's schema (`migrations/001_documents_and_chunks.sql`):
+Day 1's schema (`src/recall/migrations/001_documents_and_chunks.sql`):
 
 - `documents`: `id`, `path` (unique, e.g. `tutorial/query-params.md`), `title`, `url`, `content` (the normalized
   text), `content_sha256`, `ingested_at`.
