@@ -25,6 +25,18 @@ def connect(url: str | None = None, application_name: str = "recall") -> psycopg
     return psycopg.connect(url or database_url(), autocommit=True, application_name=application_name)
 
 
+def lock_read_committed(conn: psycopg.Connection, key: int) -> None:
+    """Begin the open transaction at READ COMMITTED and take the advisory lock `key` for it.
+
+    The isolation level is set explicitly because waiting for the lock only works under READ COMMITTED: each
+    statement after the wait sees what the previous holder committed. Under REPEATABLE READ (a database's or
+    role's default can make it so) the snapshot is taken before the wait, and the second migrator or ingest fails
+    on the first one's work. Must be the transaction's first statement.
+    """
+    conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+    conn.execute("SELECT pg_advisory_xact_lock(%s)", (key,))
+
+
 def migrations(directory: Traversable | None = None) -> list[tuple[str, str]]:
     """(version, sql) for every migration file, in version order. A badly named file is an error, not skipped."""
     found: list[tuple[str, str]] = []
@@ -52,14 +64,14 @@ def migrate(conn: psycopg.Connection) -> list[str]:
     applied_now: list[str] = []
     with conn.transaction():
         # Under the lock: two sessions creating the same table at once can both fail the IF NOT EXISTS check.
-        conn.execute("SELECT pg_advisory_xact_lock(%s)", (_MIGRATION_LOCK,))
+        lock_read_committed(conn, _MIGRATION_LOCK)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY,"
             " applied_at timestamptz NOT NULL DEFAULT now())"
         )
     for version, sql in migrations():
         with conn.transaction():
-            conn.execute("SELECT pg_advisory_xact_lock(%s)", (_MIGRATION_LOCK,))
+            lock_read_committed(conn, _MIGRATION_LOCK)
             if conn.execute("SELECT 1 FROM schema_migrations WHERE version = %s", (version,)).fetchone():
                 continue
             conn.execute(sql.encode())

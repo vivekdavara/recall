@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import psycopg
 
+from recall import db
 from recall.chunking import CHUNKER_VERSION, chunk_document
 from recall.corpus.load import Document
 
@@ -37,7 +38,7 @@ def ingest(
         raise ValueError("two documents with the same path")
     added = updated = unchanged = written = 0
     with conn.transaction():
-        conn.execute("SELECT pg_advisory_xact_lock(%s)", (_INGEST_LOCK,))
+        db.lock_read_committed(conn, _INGEST_LOCK)
         settings = (source_commit, CHUNKER_VERSION, max_tokens)
         stored = conn.execute("SELECT source_commit, chunker_version, max_tokens FROM corpus_settings").fetchone()
         same_settings = stored == settings

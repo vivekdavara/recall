@@ -152,3 +152,12 @@ def test_concurrent_ingests_queue_and_the_second_finds_nothing_to_do(schema: str
     assert sorted((r.added, r.unchanged) for r in reports) == [(0, 3), (3, 0)]
     with connect_to(schema) as c:
         assert stored(c) == expected(DOCS)
+
+
+def test_an_updated_document_gets_a_new_ingested_at_and_the_others_keep_theirs(conn: psycopg.Connection):
+    run(conn, DOCS)
+    before = dict(conn.execute("SELECT path, ingested_at FROM documents").fetchall())
+    run(conn, [replace(DOCS[0], content="Changed.\n"), *DOCS[1:]])
+    after = dict(conn.execute("SELECT path, ingested_at FROM documents").fetchall())
+    assert after["a.md"] > before["a.md"]
+    assert (after["b.md"], after["c.md"]) == (before["b.md"], before["c.md"])

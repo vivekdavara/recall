@@ -119,3 +119,22 @@ def test_migrations_are_read_in_number_order(tmp_path: Path):
         (tmp_path / name).write_text(name)
     assert [v for v, _ in db.migrations(tmp_path)][:3] == ["001_a", "002_b", "003_x"]
     assert db.migrations(tmp_path)[-1] == ("010_j", "010_j.sql")
+
+
+def test_two_chunks_of_a_document_cant_share_an_ordinal(conn: psycopg.Connection):
+    doc = insert_document(conn)
+    insert = (
+        "INSERT INTO chunks (document_id, ordinal, heading_path, start_offset, end_offset, content, token_count)"
+        " VALUES (%s, 0, '{}', %s, %s, %s, 1)"
+    )
+    conn.execute(insert, (doc, 0, 1, "a"))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(insert, (doc, 1, 2, "b"))
+
+
+@pytest.mark.parametrize("commit", ["abc", "A" * 40, "g" * 40])
+def test_the_settings_row_holds_a_full_lowercase_commit_id(conn: psycopg.Connection, commit: str):
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO corpus_settings (source_commit, chunker_version, max_tokens) VALUES (%s, 1, 1)", (commit,)
+        )
