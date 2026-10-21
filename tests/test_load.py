@@ -61,3 +61,13 @@ def test_a_page_that_isnt_utf8_is_an_error(tmp_path: Path):
     archive = make_archive(tmp_path / "b.tar.gz", files=files)
     with pytest.raises(UnicodeDecodeError):
         fetch.build_manifest(archive, commit=COMMIT)
+
+
+def test_an_included_file_that_isnt_utf8_is_an_error(tmp_path: Path):
+    # Pages are read as text when the manifest is built; included files are only hashed, so load is where it shows.
+    files = {**FILES, "docs_src/a/t1.py": b"caf\xe9 = 1\n"}
+    archive = make_archive(tmp_path / "c.tar.gz", files=files)
+    manifest = fetch.build_manifest(archive, commit=COMMIT)
+    fetch.extract(archive, manifest, tmp_path / "corpus")
+    with pytest.raises(CorpusError, match=r"docs_src/a/t1\.py is not UTF-8"):
+        load(tmp_path / "corpus", manifest)

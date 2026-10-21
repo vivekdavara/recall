@@ -170,3 +170,7 @@ def test_which_paths_are_kept_pages():
     for path in ["docs/en/docs/release-notes.md", "docs/en/docs/reference/x.md", "docs/es/docs/a.md", "docs/en/a.md"]:
         assert source.page_of(path) is None, path
     assert source.page_of("docs/en/docs/img/a.png") is None
+
+
+def test_verify_of_a_corpus_never_fetched_lists_every_file_as_missing(manifest: Manifest, tmp_path: Path):
+    assert fetch.verify(tmp_path / "nothing", manifest) == [f"missing: {f.path}" for f in manifest.files]

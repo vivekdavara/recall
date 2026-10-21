@@ -94,3 +94,13 @@ def test_percentile_is_nearest_rank():
     assert cli.percentile([7], 50) == 7
     with pytest.raises(ValueError):
         cli.percentile([], 50)
+
+
+def test_manifest_goes_to_standard_output_without_out(
+    setup: tuple[str, Manifest], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    _, manifest = setup
+    monkeypatch.setattr(source, "COMMIT", COMMIT)
+    monkeypatch.setattr(source, "TAG", "t")
+    assert cli.main(["manifest", str(tmp_path / "a.tar.gz")]) == 0
+    assert Manifest.from_json(capsys.readouterr().out) == manifest

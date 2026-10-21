@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -93,3 +94,28 @@ def test_deleting_a_document_deletes_its_chunks(conn: psycopg.Connection):
 
 def test_the_vector_extension_is_usable(conn: psycopg.Connection):
     assert conn.execute("SELECT '[1,2,3]'::vector <=> '[1,2,3]'::vector").fetchone() == (0.0,)
+
+
+@pytest.mark.parametrize(
+    ("names", "message"),
+    [
+        (["001_a.sql", "1_b.sql"], "must look like 001_name.sql"),
+        (["001_a.sql", "002-b.sql"], "must look like 001_name.sql"),
+        (["001_a.sql", "003_c.sql"], "without gaps"),
+        (["002_b.sql"], "without gaps"),
+        (["001_a.sql", "001_b.sql"], "without gaps"),
+    ],
+)
+def test_badly_named_or_numbered_migrations_are_errors(tmp_path: Path, names: list[str], message: str):
+    for name in names:
+        (tmp_path / name).write_text("SELECT 1;")
+    (tmp_path / "__init__.py").write_text("")  # not a migration: ignored
+    with pytest.raises(ValueError, match=message):
+        db.migrations(tmp_path)
+
+
+def test_migrations_are_read_in_number_order(tmp_path: Path):
+    for name in ["002_b.sql", "001_a.sql", "010_j.sql", *(f"00{i}_x.sql" for i in range(3, 10))]:
+        (tmp_path / name).write_text(name)
+    assert [v for v, _ in db.migrations(tmp_path)][:3] == ["001_a", "002_b", "003_x"]
+    assert db.migrations(tmp_path)[-1] == ("010_j", "010_j.sql")

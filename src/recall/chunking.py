@@ -127,9 +127,8 @@ def _pieces(text: str, lines: list[markdown.Line], max_tokens: int) -> Iterator[
     """
     for block in _blocks(text, lines):
         start, end = block[0].start, block[-1].end
+        # Never 0: a block's lines aren't blank, or it is a fence, whose fence characters are tokens.
         n = count_tokens(text[start:end])
-        if n == 0:
-            continue
         if n <= max_tokens:
             yield _trim(text, start, end, n)
             continue

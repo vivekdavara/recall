@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from importlib import resources
+from importlib.resources.abc import Traversable
 
 import psycopg
 
@@ -24,10 +25,10 @@ def connect(url: str | None = None, application_name: str = "recall") -> psycopg
     return psycopg.connect(url or database_url(), autocommit=True, application_name=application_name)
 
 
-def migrations() -> list[tuple[str, str]]:
+def migrations(directory: Traversable | None = None) -> list[tuple[str, str]]:
     """(version, sql) for every migration file, in version order. A badly named file is an error, not skipped."""
     found: list[tuple[str, str]] = []
-    for entry in resources.files("recall.migrations").iterdir():
+    for entry in (directory or resources.files("recall.migrations")).iterdir():
         if not entry.name.endswith(".sql"):
             continue
         m = _MIGRATION_NAME.match(entry.name)

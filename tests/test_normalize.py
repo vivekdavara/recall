@@ -154,3 +154,18 @@ def test_a_page_with_every_extension_normalizes_to_its_golden_file():
     out = normalize("golden/page.md", read_golden("page.md"), read_golden)
     assert out == read_golden("page.normalized.md")
     assert normalize("golden/page.md", out, read_golden) == out
+
+
+def test_a_raw_include_outside_a_fence_is_inserted_as_is():
+    assert norm("Before\n{!../../docs_src/q/fenced.py!}\nAfter") == (
+        'Before\ndoc = """\n```\nnot a fence closer here\n```\n"""\nAfter'
+    )
+
+
+def test_an_included_file_with_nul_is_refused():
+    FILES["docs_src/q/nul.py"] = "a = '\x00'\n"
+    try:
+        with pytest.raises(NormalizeError, match=r"NUL character in docs_src/q/nul\.py"):
+            norm("{* ../../docs_src/q/nul.py *}")
+    finally:
+        del FILES["docs_src/q/nul.py"]
