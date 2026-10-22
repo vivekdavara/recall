@@ -142,10 +142,12 @@ jobs:
       - name: Model tests (unit, then the real corpus)
         run: pytest -m model -s
       - name: Token fit
+        # shell: bash adds pipefail, so the script failing fails the step despite the pipe into tee.
+        shell: bash
         run: |
           {
             echo '### Chunks counted in model tokens (scripts/token_fit.py)'
             echo '```'
-            python scripts/token_fit.py 2>/dev/null
+            python scripts/token_fit.py
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
