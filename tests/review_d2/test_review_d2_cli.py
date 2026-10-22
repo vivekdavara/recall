@@ -64,7 +64,7 @@ def test_an_invalid_recall_embedder_is_refused_not_read_as_model(monkeypatch: py
 
 
 def test_a_model_that_cannot_be_loaded_is_reported_not_a_traceback(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    schema: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
     """ModelUnavailable's docstring: "sentence-transformers isn't installed, or the model can't be loaded". But
     SentenceTransformerEmbedder only turns an ImportError (and a wrong dimension) into it: when the model can't be
@@ -77,7 +77,16 @@ def test_a_model_that_cannot_be_loaded_is_reported_not_a_traceback(
         raise OSError("We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them")
 
     monkeypatch.setattr(st, "SentenceTransformer", unloadable)
-    monkeypatch.setenv("RECALL_DATABASE_URL", "postgresql://127.0.0.1:1/never-used")
+    # (Adjusted: `recall search` now checks the stored model before loading one, so it needs a database whose
+    # vectors are the default model's.)
+    use_schema(monkeypatch, schema)
+    with connect_to(schema) as c:
+        db.migrate(c)
+        c.execute(
+            "INSERT INTO corpus_settings (source_commit, chunker_version, max_tokens, embedding_model)"
+            " VALUES (%s, 1, 1, %s)",
+            ("a" * 40, embedding.DEFAULT_MODEL.name),
+        )
     try:
         code = cli.main(["search", "x", "--embedder", "model"])
     except OSError as e:

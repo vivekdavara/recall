@@ -207,8 +207,9 @@ def test_search_with_vectors_of_another_model_fails_cleanly(
         def name(self) -> str:
             return "other"
 
+    # --embedder hash passes the command's own check of the stored model; search() still checks the embedder it gets.
     monkeypatch.setattr(cli, "make_embedder", lambda kind: Other())
-    assert cli.main(["search", "x"]) == 1
+    assert cli.main(["search", "x", "--embedder", "hash"]) == 1
     err = capsys.readouterr().err
     assert (
         err
@@ -254,3 +255,18 @@ def test_an_invalid_recall_embedder_stops_the_command(
 def test_search_accepts_lists_of_1000():
     args = cli.parser().parse_args(["search", "x", "-k", "1000", "--candidates", "1000"])
     assert (args.k, args.candidates) == (1000, 1000)
+
+
+def test_search_refuses_another_models_vectors_before_loading_a_model(
+    setup: tuple[str, Manifest], schema: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    url, _ = setup
+    monkeypatch.setenv("RECALL_DATABASE_URL", f"{TEST_DATABASE_URL}?options=-csearch_path%3D{schema},public")
+    assert cli.main(["fetch", "--url", url]) == 0
+    assert cli.main(["ingest", "--embedder", "hash"]) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(cli, "make_embedder", lambda kind: pytest.fail("loaded a model"))
+    assert cli.main(["search", "x", "--embedder", "model"]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("recall: the stored vectors are from hash-v1-384, not BAAI/bge-small-en-v1.5@")
+    assert "search with --embedder for that model, or ingest again" in err

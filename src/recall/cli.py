@@ -15,7 +15,7 @@ from recall.corpus import fetch, source
 from recall.corpus.fetch import CorpusError
 from recall.corpus.load import load
 from recall.corpus.normalize import NormalizeError
-from recall.embedding import Embedder, HashEmbedder, ModelUnavailable
+from recall.embedding import DEFAULT_MODEL, Embedder, HashEmbedder, ModelUnavailable
 
 
 def data_dir() -> Path:
@@ -144,10 +144,22 @@ def cmd_search(args: argparse.Namespace) -> int:
         # Python reads undecodable argv bytes as lone surrogates (e.g. Latin-1 from a file), which psycopg can't send.
         print("recall: the question isn't valid UTF-8", file=sys.stderr)
         return 1
-    # Full-text search needs no model: don't load one (it takes seconds).
-    embedder = None if args.mode == "full-text" else make_embedder(args.embedder)
     with db.connect() as conn:
         try:
+            embedder = None
+            if args.mode != "full-text":
+                # Check the stored vectors' model before loading one (it takes seconds); search checks again, with
+                # the query, in one snapshot. Full-text search needs no model.
+                wanted = HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name
+                stored = retrieval.stored_model(conn)
+                if stored is None:
+                    raise retrieval.ModelMismatch("no embedded corpus: run recall ingest")
+                if stored != wanted:
+                    raise retrieval.ModelMismatch(
+                        f"the stored vectors are from {stored}, not {wanted}: search with --embedder for that model,"
+                        " or ingest again"
+                    )
+                embedder = make_embedder(args.embedder)
             hits = retrieval.search(conn, args.question, embedder, args.mode, args.k, candidates=args.candidates)
         except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
             # Search doesn't migrate: nothing ingested yet, or a database from an older version (ingest migrates it).
