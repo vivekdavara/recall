@@ -144,22 +144,25 @@ def test_hybrid_is_the_fusion_of_the_two_lists(
     assert [h.score for h in got] == pytest.approx([s for _, s, _, _ in expected], rel=1e-12)
 
 
+def one_list_each(conn: psycopg.Connection) -> list[Hit]:
+    """Hybrid with one candidate a list: full-text's is body.md ("pydantic"), vector's cors.md (its own text)."""
+    cors = HashEmbedder().embed_query(passage_text(("CORS",), "Cross-Origin Resource Sharing for another origin."))
+    return hybrid(conn, "pydantic", cors, k=10, candidates=1)
+
+
 def test_hybrid_scores_a_chunk_in_one_list_by_that_rank_alone(conn: psycopg.Connection):
     load(conn)
-    # "pydantic" is in body.md only; the hash vector of "zzz" is near nothing in particular.
-    hits = hybrid(conn, "pydantic", HashEmbedder().embed_query("zzz"), k=10, candidates=5)
-    body = next(h for h in hits if h.path == "body.md")
-    assert body.full_text_rank == 1
-    expected = 1 / 61 + (1 / (60 + body.vector_rank) if body.vector_rank else 0)
-    assert body.score == pytest.approx(expected)
+    hits = one_list_each(conn)
+    assert [(h.path, h.full_text_rank, h.vector_rank) for h in hits] == [("body.md", 1, None), ("cors.md", None, 1)]
+    assert [h.score for h in hits] == [1 / 61, 1 / 61]
 
 
 def test_hybrid_breaks_ties_by_chunk_id(conn: psycopg.Connection):
     load(conn)
-    hits = hybrid(conn, "pydantic", HashEmbedder().embed_query("zzz"), k=10, candidates=1)
-    assert len(hits) <= 2
-    if len(hits) == 2 and hits[0].score == hits[1].score:
-        assert hits[0].chunk_id < hits[1].chunk_id
+    hits = one_list_each(conn)
+    # Equal scores (above); body.md was ingested first, so its chunk id is lower.
+    assert hits[0].score == hits[1].score
+    assert hits[0].chunk_id < hits[1].chunk_id
 
 
 def test_a_hit_points_at_its_span_and_section(conn: psycopg.Connection):
