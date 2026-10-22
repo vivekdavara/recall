@@ -357,3 +357,28 @@ each, and every later commit was chained on `make check` itself.
 I wrote expectations by hand that miscounted tokens: a fence's backticks are three tokens each side, so a fence I
 thought had 10 tokens had 12. The tests failed, the arithmetic was wrong rather than the code, and the tests now assert
 the count they depend on (`count_tokens(fence) == 12`) before relying on it.
+
+## What went wrong on day 2
+
+**What was the worst bug the review found?**
+Vector lists came back short after any ingest that rewrote chunks: after a model change, a top 60 over 80 chunks
+returned 31. An HNSW scan picks its ef_search nearest index entries and only then drops the dead ones, and the index
+keeps entries for updated and deleted rows until VACUUM; a model change rewrites every vector, so half the nearest
+entries were dead. My own model-change test hid it, because pgvector stores identical vectors as one element and my
+stand-in "new model" gave the same vectors under a new name. The fix is pgvector 0.8's iterative scan
+(`hnsw.iterative_scan = strict_order`), which keeps searching until the LIMIT is met, in distance order
+(`tests/review_d2/test_review_d2_retrieval.py`).
+
+**Tell me about a mistake you made.**
+I raised the ef_search floor to 100 because my script said HNSW returned the exact top 10 there. It didn't: on 1,503
+rows the planner switches from the index to a sequential scan at about ef_search 80 to 100, and my script checked the
+plan only at 40, so "exact at 100" was an exact scan compared with itself. I found it with an EXPLAIN while looking at
+something else. The script now forces each side's plan and checks it at every setting (real HNSW: 0.9987 at 100), the
+floor is back at 40, and a test pins the top-10 plan to the index. That test passed with the wrong floor at first,
+too, until it ran ANALYZE: a freshly loaded table has no statistics, and then the planner takes the index regardless.
+
+**What else did the review find?**
+That `search` checked the stored model in one snapshot and queried in another (an ingest in between could mix two
+models' vectors; now one REPEATABLE READ transaction); that ef_search can't exceed 1,000, and a fresh session silently
+fell back to 40 (lists are capped at 1,000); that a 20,000-word question made ts_rank_cd ask for 1.3 GB (each distinct
+word once, the first 64); and four tracebacks the CLI now turns into one-line errors.
