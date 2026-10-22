@@ -172,7 +172,7 @@ def test_search(
     monkeypatch.setenv("RECALL_DATABASE_URL", f"{TEST_DATABASE_URL}?options=-csearch_path%3D{schema},public")
     assert cli.main(["fetch", "--url", url]) == 0
     assert cli.main(["search", "x", "--mode", "full-text"]) == 1
-    assert capsys.readouterr().err.endswith("/recall_test has no corpus: run recall ingest\n")
+    assert capsys.readouterr().err.endswith("/recall_test has no corpus or an older schema: run recall ingest\n")
     assert cli.main(["migrate"]) == 0
     assert cli.main(["search", "x", "--embedder", "hash"]) == 1
     assert "no embedded corpus: run recall ingest" in capsys.readouterr().err
@@ -239,3 +239,13 @@ def test_search_refuses_lists_longer_than_pgvector_can_search(option: str, capsy
         cli.main(["search", "x", option, "1001"])
     assert e.value.code == 2
     assert "must be at most 1000, not 1001" in capsys.readouterr().err
+
+
+def test_an_invalid_recall_embedder_stops_the_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setenv("RECALL_EMBEDDER", "Hash")
+    with pytest.raises(SystemExit) as e:
+        cli.main(["ingest"])
+    assert e.value.code == 2
+    assert "RECALL_EMBEDDER must be one of model, hash, not 'Hash'" in capsys.readouterr().err

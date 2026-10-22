@@ -106,10 +106,15 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+EMBEDDERS = ("model", "hash")
+
+
 def make_embedder(kind: str) -> Embedder:
     """`model` is the pinned sentence-transformers model (the `embed` extra); `hash` the dependency-free stub."""
     if kind == "hash":
         return HashEmbedder()
+    if kind != "model":
+        raise ValueError(f"unknown embedder {kind!r}: use one of {', '.join(EMBEDDERS)}")
     from recall.embedding import SentenceTransformerEmbedder
 
     return SentenceTransformerEmbedder()
@@ -133,6 +138,12 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 
 
 def cmd_search(args: argparse.Namespace) -> int:
+    try:
+        args.question.encode("utf-8")
+    except UnicodeEncodeError:
+        # Python reads undecodable argv bytes as lone surrogates (e.g. Latin-1 from a file), which psycopg can't send.
+        print("recall: the question isn't valid UTF-8", file=sys.stderr)
+        return 1
     # Full-text search needs no model: don't load one (it takes seconds).
     embedder = None if args.mode == "full-text" else make_embedder(args.embedder)
     with db.connect() as conn:
@@ -193,7 +204,7 @@ def parser() -> argparse.ArgumentParser:
 def add_embedder_option(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--embedder",
-        choices=["model", "hash"],
+        choices=EMBEDDERS,
         default=os.environ.get("RECALL_EMBEDDER", "model"),
         help="model: the pinned sentence-transformers model (default; $RECALL_EMBEDDER overrides); hash: the stub",
     )
@@ -214,16 +225,22 @@ def positive(text: str) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = parser().parse_args(argv)
+    p = parser()
+    args = p.parse_args(argv)
+    if getattr(args, "embedder", "model") not in EMBEDDERS:
+        # argparse checks choices on the command line, not on a default taken from $RECALL_EMBEDDER.
+        p.error(f"RECALL_EMBEDDER must be one of {', '.join(EMBEDDERS)}, not {args.embedder!r}")
     try:
         code: int = args.run(args)
     except (CorpusError, NormalizeError, ModelUnavailable, retrieval.ModelMismatch) as e:
         print(f"recall: {e}", file=sys.stderr)
         return 1
-    except psycopg.errors.UndefinedTable:
-        # Searching before anything was migrated or ingested: say what to run, not a traceback.
+    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+        # Searching before anything was ingested, or a database from an older version (ingest migrates it): say what
+        # to run, not a traceback.
         print(
-            f"recall: the database {db.describe_url(db.database_url())} has no corpus: run recall ingest",
+            f"recall: the database {db.describe_url(db.database_url())} has no corpus or an older schema:"
+            " run recall ingest",
             file=sys.stderr,
         )
         return 1

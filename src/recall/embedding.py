@@ -126,7 +126,11 @@ class SentenceTransformerEmbedder:
             ) from e
         self.spec = spec
         self._batch_size = batch_size
-        self._model: Any = SentenceTransformer(spec.repo, revision=spec.revision, device="cpu")
+        try:
+            self._model: Any = SentenceTransformer(spec.repo, revision=spec.revision, device="cpu")
+        except Exception as e:  # offline and not cached, a corrupt cache, a revision that's gone
+            reason = " ".join(str(e).split())
+            raise ModelUnavailable(f"can't load {spec.name}: {reason[:200]}") from e
         found = self._model.get_embedding_dimension()
         if found != spec.dimension:
             raise ModelUnavailable(f"{spec.name} gives {found} dimensions, not {spec.dimension}")
