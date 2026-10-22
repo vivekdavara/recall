@@ -146,3 +146,19 @@ def test_the_specs_input_length_is_the_models(model) -> None:  # type: ignore[no
     assert short._model.max_seq_length == 16
     truncated, prefix = short.embed_passages([long_text, long_text[:200]])
     assert truncated == pytest.approx(prefix, abs=1e-6)
+
+
+def test_any_failure_to_load_the_model_is_one_short_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    st = pytest.importorskip("sentence_transformers")
+    from recall.embedding import ModelUnavailable, SentenceTransformerEmbedder
+
+    def corrupt(*args: object, **kwargs: object) -> object:
+        raise ValueError("Error while deserializing header:\n" + "x" * 500)  # what a damaged weights file gives
+
+    monkeypatch.setattr(st, "SentenceTransformer", corrupt)
+    with pytest.raises(ModelUnavailable) as e:
+        SentenceTransformerEmbedder()
+    message = str(e.value)
+    assert "\n" not in message
+    assert message.startswith(f"can't load {DEFAULT_MODEL.name}: Error while deserializing header: xxx")
+    assert len(message) == len(f"can't load {DEFAULT_MODEL.name}: ") + 200

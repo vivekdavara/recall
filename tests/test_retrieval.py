@@ -333,3 +333,13 @@ def test_words_stop_when_the_query_reaches_its_node_budget(conn: psycopg.Connect
     longs = [",".join(f"y{j}x{i}" for i in range(16)) for j in range(9)]
     assert where(full_text(conn, " ".join(longs[:8]) + " pydantic")) == ["body/"]
     assert full_text(conn, " ".join(longs) + " pydantic") == []
+
+
+def test_lists_of_exactly_1000_are_allowed(conn: psycopg.Connection):
+    load(conn)
+    v = HashEmbedder().embed_query("alpha")
+    n = conn.execute("SELECT count(*) FROM chunks").fetchone()
+    assert n is not None
+    assert len(vector(conn, v, k=retrieval.MAX_K)) == n[0]
+    assert len(hybrid(conn, "pydantic", v, k=retrieval.MAX_K, candidates=retrieval.MAX_K)) == n[0]
+    assert len(full_text(conn, "pydantic", k=retrieval.MAX_K)) == 1

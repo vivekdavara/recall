@@ -249,3 +249,8 @@ def test_an_invalid_recall_embedder_stops_the_command(
         cli.main(["ingest"])
     assert e.value.code == 2
     assert "RECALL_EMBEDDER must be one of model, hash, not 'Hash'" in capsys.readouterr().err
+
+
+def test_search_accepts_lists_of_1000():
+    args = cli.parser().parse_args(["search", "x", "-k", "1000", "--candidates", "1000"])
+    assert (args.k, args.candidates) == (1000, 1000)

@@ -147,7 +147,14 @@ def cmd_search(args: argparse.Namespace) -> int:
     # Full-text search needs no model: don't load one (it takes seconds).
     embedder = None if args.mode == "full-text" else make_embedder(args.embedder)
     with db.connect() as conn:
-        hits = retrieval.search(conn, args.question, embedder, args.mode, args.k, candidates=args.candidates)
+        try:
+            hits = retrieval.search(conn, args.question, embedder, args.mode, args.k, candidates=args.candidates)
+        except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+            # Search doesn't migrate: nothing ingested yet, or a database from an older version (ingest migrates it).
+            # Only here is that the likely cause; elsewhere such an error is a bug and keeps its traceback.
+            url = db.describe_url(db.database_url())
+            print(f"recall: the database {url} has no corpus or an older schema: run recall ingest", file=sys.stderr)
+            return 1
     if not hits:
         print("no results")
     for i, h in enumerate(hits, 1):
@@ -234,15 +241,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         code: int = args.run(args)
     except (CorpusError, NormalizeError, ModelUnavailable, retrieval.ModelMismatch) as e:
         print(f"recall: {e}", file=sys.stderr)
-        return 1
-    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
-        # Searching before anything was ingested, or a database from an older version (ingest migrates it): say what
-        # to run, not a traceback.
-        print(
-            f"recall: the database {db.describe_url(db.database_url())} has no corpus or an older schema:"
-            " run recall ingest",
-            file=sys.stderr,
-        )
         return 1
     except (psycopg.OperationalError, db.BadDatabaseURL) as e:
         # One line (psycopg's message has one per address it tried), and nothing of the password.
