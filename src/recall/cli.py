@@ -1,4 +1,4 @@
-"""The recall command: fetch and check the corpus, chunk it, and load it into PostgreSQL."""
+"""The recall command: fetch and check the corpus, chunk it, load it into PostgreSQL, and search it."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import psycopg
 
-from recall import chunking, db
+from recall import chunking, db, retrieval
 from recall.corpus import fetch, source
 from recall.corpus.fetch import CorpusError
 from recall.corpus.load import load
@@ -132,6 +132,22 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_search(args: argparse.Namespace) -> int:
+    # Full-text search needs no model: don't load one (it takes seconds).
+    embedder = None if args.mode == "full-text" else make_embedder(args.embedder)
+    with db.connect() as conn:
+        hits = retrieval.search(conn, args.question, embedder, args.mode, args.k, candidates=args.candidates)
+    if not hits:
+        print("no results")
+    for i, h in enumerate(hits, 1):
+        ranks = [f"{name} #{r}" for name, r in (("full-text", h.full_text_rank), ("vector", h.vector_rank)) if r]
+        print(f"{i}. {h.path}{h.url[h.url.find('#') :] if '#' in h.url else ''}  {' > '.join(h.heading_path)}")
+        print(f"   score {h.score:.4f} ({', '.join(ranks)}); chars {h.start}-{h.end}")
+        text = " ".join(h.content.split())
+        print(f"   {text[: args.width]}{'...' if len(text) > args.width else ''}")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="recall", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -158,6 +174,19 @@ def parser() -> argparse.ArgumentParser:
     show.add_argument("--max-tokens", type=positive, default=chunking.DEFAULT_MAX_TOKENS)
     show.set_defaults(run=cmd_show)
     sub.add_parser("migrate", help="apply the schema migrations").set_defaults(run=cmd_migrate)
+    q = sub.add_parser("search", help="retrieve the chunks that best match a question")
+    q.add_argument("question")
+    q.add_argument("--mode", choices=retrieval.MODES, default="hybrid")
+    q.add_argument("-k", type=positive, default=retrieval.DEFAULT_K, help="how many chunks (default %(default)s)")
+    q.add_argument(
+        "--candidates",
+        type=positive,
+        default=retrieval.DEFAULT_CANDIDATES,
+        help="hybrid: how many chunks each retriever hands to the fusion (default %(default)s)",
+    )
+    q.add_argument("--width", type=positive, default=160, help="characters of each chunk to print")
+    add_embedder_option(q)
+    q.set_defaults(run=cmd_search)
     return p
 
 
@@ -181,8 +210,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         code: int = args.run(args)
-    except (CorpusError, NormalizeError, ModelUnavailable) as e:
+    except (CorpusError, NormalizeError, ModelUnavailable, retrieval.ModelMismatch) as e:
         print(f"recall: {e}", file=sys.stderr)
+        return 1
+    except psycopg.errors.UndefinedTable:
+        # Searching before anything was migrated or ingested: say what to run, not a traceback.
+        print(
+            f"recall: the database {db.describe_url(db.database_url())} has no corpus: run recall ingest",
+            file=sys.stderr,
+        )
         return 1
     except (psycopg.OperationalError, db.BadDatabaseURL) as e:
         # One line (psycopg's message has one per address it tried), and nothing of the password.

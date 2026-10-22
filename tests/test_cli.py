@@ -10,6 +10,7 @@ from conftest import TEST_DATABASE_URL
 from recall import cli
 from recall.corpus import fetch, source
 from recall.corpus.fetch import Manifest
+from recall.embedding import HashEmbedder
 
 
 @pytest.fixture
@@ -162,3 +163,71 @@ def test_show_names_the_text_before_the_first_heading(
     capsys.readouterr()
     assert cli.main(["show", "tutorial/a.md"]) == 0
     assert "--- chunk 0: (before the first heading); [0:19], 4 tokens\nBefore any heading.\n" in capsys.readouterr().out
+
+
+def test_search(
+    setup: tuple[str, Manifest], schema: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    url, _ = setup
+    monkeypatch.setenv("RECALL_DATABASE_URL", f"{TEST_DATABASE_URL}?options=-csearch_path%3D{schema},public")
+    assert cli.main(["fetch", "--url", url]) == 0
+    assert cli.main(["search", "x", "--mode", "full-text"]) == 1
+    assert capsys.readouterr().err.endswith("/recall_test has no corpus: run recall ingest\n")
+    assert cli.main(["migrate"]) == 0
+    assert cli.main(["search", "x", "--embedder", "hash"]) == 1
+    assert "no embedded corpus: run recall ingest" in capsys.readouterr().err
+    assert cli.main(["ingest", "--max-tokens", "4", "--embedder", "hash"]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["search", "x = 1", "--embedder", "hash", "-k", "2", "--width", "5"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "1. tutorial/a.md#a  A"
+    assert out[1].startswith("   score 0.0") and "(full-text #1, vector #" in out[1]
+    assert out[2] in {"   x = 1", "   ```py..."} and len(out) == 6
+
+    # Full-text search loads no model: an unusable one doesn't matter.
+    monkeypatch.setattr(cli, "make_embedder", lambda kind: pytest.fail("loaded a model"))
+    assert cli.main(["search", "x", "--mode", "full-text"]) == 0
+    assert "(full-text #1)" in capsys.readouterr().out
+    assert cli.main(["search", "zebra", "--mode", "full-text"]) == 0
+    assert capsys.readouterr().out == "no results\n"
+
+
+def test_search_with_vectors_of_another_model_fails_cleanly(
+    setup: tuple[str, Manifest], schema: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    url, _ = setup
+    monkeypatch.setenv("RECALL_DATABASE_URL", f"{TEST_DATABASE_URL}?options=-csearch_path%3D{schema},public")
+    assert cli.main(["fetch", "--url", url]) == 0
+    assert cli.main(["ingest", "--embedder", "hash"]) == 0
+    capsys.readouterr()
+
+    class Other(HashEmbedder):
+        @property
+        def name(self) -> str:
+            return "other"
+
+    monkeypatch.setattr(cli, "make_embedder", lambda kind: Other())
+    assert cli.main(["search", "x"]) == 1
+    err = capsys.readouterr().err
+    assert (
+        err
+        == "recall: the stored vectors are from hash-v1-384, not other: search with that embedder, or ingest again\n"
+    )
+
+
+def test_the_model_embedder_without_sentence_transformers_fails_cleanly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_model(name: str, *args: object, **kwargs: object) -> object:
+        if name == "sentence_transformers":
+            raise ImportError("no module named sentence_transformers")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", no_model)
+    assert cli.main(["search", "x", "--embedder", "model"]) == 1
+    assert "needs sentence-transformers: pip install -e '.[embed]'" in capsys.readouterr().err
