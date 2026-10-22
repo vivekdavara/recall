@@ -137,21 +137,25 @@ the corpus's section titles, which are easy: each is in its own section's embedd
 |---|---|---|
 | 10 | 0.9447 | 226 of 300 |
 | 20 | 0.9687 | 250 of 300 |
-| 40 (pgvector's default) | 0.9893 | 277 of 300 |
-| 100 (Recall's floor since `83fbda8`) | 1.0000 | 300 of 300 |
+| 40 (pgvector's default; Recall's floor) | 0.9893 | 277 of 300 |
+| 60 | 0.9940 | 286 of 300 |
+| 100 | 0.9987 | 296 of 300 |
 
-**Latency** (the same script and questions, after 30 untimed; ms):
+The HNSW side forces the index (`enable_seqscan = off`) and the script checks every plan: on 1,503 rows the planner
+picks a sequential scan instead from about ef_search 80 to 100. A first run checked the plan only at 40 and reported
+1.0000 at 100, which was that exact scan (`83fbda8`, corrected in `9c4f90b`).
+
+**Latency** (the same script and questions, after 30 untimed, at `47dc914`, which has today's settings; ms):
 
 | step | p50 | p95 | p99 | max |
 |---|---|---|---|---|
-| embed the question (bge-small, CPU) | 5.22 | 5.45 | 5.56 | 6.53 |
-| full-text query | 0.78 | 2.25 | 2.86 | 3.65 |
-| vector query (ef_search 100) | 2.43 | 2.46 | 2.50 | 2.51 |
-| hybrid query (50 candidates a list) | 3.10 | 4.54 | 5.43 | 6.22 |
-| hybrid end to end (embed + query) | 9.18 | 10.73 | 11.77 | 12.23 |
+| embed the question (bge-small, CPU) | 5.15 | 5.42 | 5.52 | 6.51 |
+| full-text query | 0.76 | 2.14 | 2.72 | 3.49 |
+| vector query (top 10, HNSW index) | 0.84 | 0.94 | 0.98 | 1.04 |
+| hybrid query (50 candidates a list) | 1.58 | 2.97 | 3.92 | 4.61 |
+| hybrid end to end (embed + query) | 7.41 | 9.02 | 10.10 | 10.58 |
 
-At ef_search 40 the vector query was 0.84 ms at p50 and hybrid end to end 7.41 ms (the run at `47dc914`). `recall
-search` as a command takes about 5 s, nearly all of it loading the model.
+`recall search` as a command takes about 5 s, nearly all of it loading the model.
 
 **Smoke questions** (`tests/test_real_retrieval.py`, six hand-written questions, not an evaluation; rank of the page in
 each mode's top 10, the same here and in CI):
@@ -294,7 +298,8 @@ step that couldn't fail (`47dc914`), an unknown mode run as hybrid, splitting at
   passage (a base64 PNG in a code block) is truncated by the model.
 - Full-text ranking is ts_rank_cd, which has no inverse document frequency: a question in common words ("run a function
   after returning the response") can miss its page. Day 4 measures IDF weighting against it.
-- HNSW is approximate: exact on 300 easy questions at Recall's ef_search floor of 100, 0.989 at pgvector's default.
+- HNSW is approximate: 0.989 of the exact top 10 on 300 easy questions at ef_search 40. At this size the planner
+  sometimes prefers an exact sequential scan (hybrid's 50 candidates), which is fine here and wouldn't be at scale.
 - Reciprocal rank fusion favours chunks both retrievers rank moderately over one that only one ranks high.
 - Full-text search uses a question's first 64 distinct words; an OR query ranks every chunk holding any of them.
 - `recall search` loads the model for every command (seconds); day 3's API keeps it loaded.

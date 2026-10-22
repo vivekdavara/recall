@@ -261,9 +261,12 @@ misses its page); day 4 measures BM25-style IDF weighting against it on the labe
 **Vector.** `ORDER BY embedding <=> question LIMIT n` through the HNSW index, with row numbers taken outside that
 subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan picks at most
 `hnsw.ef_search` index entries (pgvector's default 40), so each query raises it to the list length for its own
-transaction, and to 100 at least (before that, a list of 50 came back with 40); lists are at most 1,000 long,
-pgvector's largest ef_search. The floor of 100 is measured: against an exact scan, 300 questions' top 10 had 0.9893
-of the exact chunks at 40 and all of them at 100, for about 1.6 ms more a query (`scripts/measure_retrieval.py`). That alone wasn't enough: the scan picks its entries before dropping dead ones, and the index keeps the
+transaction (before that, a list of 50 came back with 40); lists are at most 1,000 long, pgvector's largest
+ef_search. Against an exact scan, 300 questions' top 10 had 0.9893 of the exact chunks at ef_search 40 and 0.9987 at
+100 (`scripts/measure_retrieval.py`, each plan forced and checked). The floor stays at pgvector's 40: on 1,503 rows the
+planner chooses by cost between the index and a sequential scan, and from about ef_search 80 to 100 it scans, so a
+higher floor would stop using the index at all (a first measurement mistook that scan's exact results for HNSW's).
+Hybrid's 50 candidates can already get a scan; both plans give the full list, the scan exactly. That alone wasn't enough: the scan picks its entries before dropping dead ones, and the index keeps the
 entries of rows an ingest updated or deleted until VACUUM, so after a model change a list of 60 came back with 31
 (found by the day-2 review). Each query also turns on pgvector's iterative scan (`hnsw.iterative_scan =
 strict_order`), which keeps searching until the LIMIT is met, in distance order.
