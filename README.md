@@ -121,7 +121,8 @@ updated, 1,503 chunks written, then 125 unchanged. Every stored chunk equals `su
 
 ## Results (day 2)
 
-Apple M3, macOS 26.6.2, Python 3.11.12, PostgreSQL 17.11 + pgvector 0.8.7; on battery (Low Power Mode off).
+Apple M3, macOS 26.6.2, Python 3.11.12, PostgreSQL 17.11 + pgvector 0.8.7. The token fit and ingest runs were on
+battery (Low Power Mode off); the latency below on AC power.
 
 **Token fit** (`.venv/bin/python scripts/token_fit.py`; the same in CI's model job): the 1,503 passages (heading path +
 chunk) are min 13, p50 187, p95 339, p99 422 and max 723 model tokens, 1.29 model tokens per Recall token at the median;
@@ -145,16 +146,17 @@ The HNSW side forces the index (`enable_seqscan = off`) and the script checks ev
 picks a sequential scan instead from about ef_search 80 to 100. A first run checked the plan only at 40 and reported
 1.0000 at 100, which was that exact scan (`83fbda8`, corrected in `9c4f90b`).
 
-**Latency** (the same script and questions, after 30 untimed, at `47dc914`, which has today's settings; ms):
+**Latency** (the same script and questions, after 30 untimed, at `54e37aa`, on AC power with nothing else running; ms):
 
 | step | p50 | p95 | p99 | max |
 |---|---|---|---|---|
-| embed the question (bge-small, CPU) | 5.15 | 5.42 | 5.52 | 6.51 |
-| full-text query | 0.76 | 2.14 | 2.72 | 3.49 |
-| vector query (top 10, HNSW index) | 0.84 | 0.94 | 0.98 | 1.04 |
-| hybrid query (50 candidates a list) | 1.58 | 2.97 | 3.92 | 4.61 |
-| hybrid end to end (embed + query) | 7.41 | 9.02 | 10.10 | 10.58 |
+| embed the question (bge-small, CPU) | 5.60 | 5.89 | 6.01 | 7.07 |
+| full-text query | 0.78 | 2.33 | 2.95 | 3.67 |
+| vector query (top 10, HNSW index) | 0.76 | 0.86 | 0.91 | 0.94 |
+| hybrid query (50 candidates a list) | 1.53 | 2.94 | 4.00 | 4.43 |
+| hybrid end to end (embed + query) | 8.06 | 9.57 | 10.59 | 10.88 |
 
+An earlier run on battery at `47dc914` was within a few tenths of a millisecond of these (hybrid end to end p50 7.41).
 `recall search` as a command takes about 5 s, nearly all of it loading the model.
 
 **Smoke questions** (`tests/test_real_retrieval.py`, six hand-written questions, not an evaluation; rank of the page in
@@ -264,6 +266,17 @@ One agent reviewed day 2 at `2fba151` (18 minutes, correctness framing, its own 
 From its judgement calls and surviving mutants: two hybrid tests that didn't test what their names said (`c4929b1`), a CI
 step that couldn't fail (`47dc914`), an unknown mode run as hybrid, splitting at tabs and newlines untested.
 
+A second agent reviewed the fixes alone at `3a4673c` (15 minutes) and found 3 defects in them (`tests/review_d2b/`):
+the 64-word cap didn't bound the query, since one pasted list with no spaces is a single phrase of 40,000 nodes (now a
+node budget, `f8f5f9a`); `search` inside a caller's transaction raised psycopg's error instead of its own (`fe2f75f`);
+and the iterative scan gives up after `hnsw.max_scan_tuples` (20,000) visited entries, dead ones included, so ingest now
+vacuums after a change (`b50239e`). It also found the first review's race test passing for the wrong reason (a new one
+races between the check and the query, `fe2f75f`) and a test reading every schema's indexes, the likely cause of an
+unexplained failure while the first agent ran (`0f494a6`).
+
+My own mistake, found during the second review: the first measurement script checked its plans only at ef_search 40,
+so its "exact at 100" was the planner's sequential scan; the floor I had raised to 100 is back at 40 (`9c4f90b`).
+
 ## Design decisions
 
 - **FastAPI's docs as the corpus.** MIT-licensed, one subject, many near-duplicate passages that differ in detail, and
@@ -301,7 +314,10 @@ step that couldn't fail (`47dc914`), an unknown mode run as hybrid, splitting at
 - HNSW is approximate: 0.989 of the exact top 10 on 300 easy questions at ef_search 40. At this size the planner
   sometimes prefers an exact sequential scan (hybrid's 50 candidates), which is fine here and wouldn't be at scale.
 - Reciprocal rank fusion favours chunks both retrievers rank moderately over one that only one ranks high.
-- Full-text search uses a question's first 64 distinct words; an OR query ranks every chunk holding any of them.
+- Full-text search uses a question's first 64 distinct words within a 256-node query, skipping any word of more
+  than 16 lexemes; an OR query ranks every chunk holding any of them.
+- An iterative HNSW scan gives up after 20,000 visited entries, dead ones included: ingest vacuums after a
+  change, but rows deleted some other way count until autovacuum.
 - `recall search` loads the model for every command (seconds); day 3's API keeps it loaded.
 - Ingest embeds inside its one transaction: a first ingest holds it for about 40 s on a laptop CPU.
 - The local cluster uses trust authentication on localhost; it is for development only.
