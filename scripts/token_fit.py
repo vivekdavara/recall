@@ -16,14 +16,10 @@ from pathlib import Path
 from transformers import AutoTokenizer
 
 from recall.chunking import DEFAULT_MAX_TOKENS, chunk_document
+from recall.cli import percentile
 from recall.corpus import fetch
 from recall.corpus.load import load
 from recall.embedding import DEFAULT_MODEL, passage_text
-
-
-def nearest_rank(sorted_values: list[int], q: float) -> int:
-    rank = max(1, -(-len(sorted_values) * int(q * 10) // 1000))  # ceil(n * q / 100) in integers, q in tenths
-    return sorted_values[rank - 1]
 
 
 def main() -> int:
@@ -48,8 +44,8 @@ def main() -> int:
     ratios.sort()
     over = sum(1 for n in counts if n > args.max_seq)
     print(f"model {args.model}, max_seq_length {args.max_seq}; chunker max_tokens {args.max_tokens}")
-    print(f"passages {len(counts)}; model tokens min {counts[0]} p50 {nearest_rank(counts, 50)}", end="")
-    print(f" p95 {nearest_rank(counts, 95)} p99 {nearest_rank(counts, 99)} max {counts[-1]}")
+    print(f"passages {len(counts)}; model tokens min {counts[0]} p50 {percentile(counts, 50)}", end="")
+    print(f" p95 {percentile(counts, 95)} p99 {percentile(counts, 99)} max {counts[-1]}")
     print(f"model tokens per chunker token: p50 {ratios[len(ratios) // 2]:.2f} max {ratios[-1]:.2f}")
     print(f"truncated (over {args.max_seq}): {over} ({100 * over / len(counts):.1f}%)")
     return 0

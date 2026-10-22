@@ -6,8 +6,9 @@ words, and reciprocal rank fusion to combine the two. A small cross-encoder rera
 written from the top passages with a citation for each claim. An evaluation harness measures retrieval (recall@k,
 MRR) and answer faithfulness on labelled questions, and CI fails when retrieval gets worse.
 
-This file is the specification. Day 1 builds the corpus, its normalization and chunking, the storage schema and the
-local database; the sections for later days say what they will add and are marked so.
+This file is the specification. Day 1 built the corpus, its normalization and chunking, the storage schema and the
+local database; day 2 the embeddings, full-text search, vector search and their fusion. The sections for later days say
+what they will add and are marked so.
 
 ## Goals and non-goals
 
@@ -140,8 +141,10 @@ three steps:
 **Size measure.** A token is a run of word characters or one punctuation character (`\w+|[^\w\s]`). It is closer to
 the word pieces an embedding model sees than counting words is (`@app.get("/items/{item_id}")` is 14 tokens, not 1),
 and it never spans whitespace, so a chunk's count is exactly the sum of its blocks' counts and the bound can be checked
-exactly. The default `max_tokens` is 256; day 2 measures what that is in the embedding model's own tokens and adjusts
-it if chunks would be truncated.
+exactly. The default `max_tokens` is 256. In the embedding model's own tokens (WordPiece, with the heading path that is
+embedded with the chunk) the corpus's 1,503 passages are p50 187, p95 339, p99 422 and max 723; the model reads 512, so
+one passage is truncated: a base64 PNG in a code block, which is one token here and hundreds of word pieces there
+(`scripts/token_fit.py`, "Embeddings" below). So `max_tokens` stays 256.
 
 **No overlap.** Chunks do not overlap. Overlap is a common way to keep context that a cut separates; here cuts fall
 at block boundaries, and each chunk carries its page title and heading path, which day 2 prepends to the text it
@@ -188,8 +191,87 @@ settings the chunks were made with are stored in `corpus_settings`: the source c
 document is re-chunked rather than mixing chunk sizes. Two ingests queue on an advisory lock, so they never interleave;
 the second sees what the first committed. A failure part way (a row PostgreSQL refuses) rolls the whole ingest back.
 
-Day 2 adds (`002_...`): `chunks.embedding vector(384)` with an HNSW index (cosine distance), a generated `tsvector`
-column with a GIN index, and the model name and dimension in `corpus_settings`, so vectors from two models never mix.
+Since day 2, ingest also embeds, in the same transaction, after writing the chunks: every chunk whose `embedding` is NULL
+(the chunks it just wrote) is embedded, 64 per model call and per `UPDATE`. When the model named in `corpus_settings`
+differs from the one ingesting, every stored vector is set to NULL first, so all are made again, while unchanged chunks
+keep their rows and ids. A model that fails part way, returns the wrong number of vectors or the wrong dimension, or
+returns a NaN (pgvector refuses it) rolls everything back, vectors included.
+
+Day 2's migration (`002_retrieval.sql`) adds:
+
+- `chunks.embedding vector(384)`, unit length, with an HNSW index for cosine distance (pgvector's defaults, `m = 16`,
+  `ef_construction = 64`). It is NULL only inside an ingest, between writing a chunk and embedding it.
+- `chunks.search_vector`, a generated `tsvector` with a GIN index: the page title (`heading_path[1]`, the page's first
+  heading) weighted A, the headings under it B, the chunk text D, all with the `english` configuration (stemming, stop
+  words). Generated, so it can't disagree with the row. `array_to_string` is STABLE (an element type's output can depend
+  on settings) and a generated column may only call IMMUTABLE functions, so a small wrapper, `heading_text(text[])`,
+  declares what is true for `text[]`; its SQL-standard body is bound when it is created, so the search path can't
+  change it later.
+- `corpus_settings.embedding_model`: the model and revision that made the stored vectors (the dimension is the column's
+  type).
+
+A day-1 database migrates in place: its chunks keep their ids, get their search vectors at once, and the next ingest
+embeds them.
+
+## Embeddings
+
+**The model.** `BAAI/bge-small-en-v1.5` (MIT license), 384 dimensions, 33.4M parameters, a 133 MB weights file, run on the CPU through
+sentence-transformers and pinned to a revision of its Hugging Face repository (`5c38ec7c...`), so a re-upload can't
+change the vectors. The other common small model, `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, also 384
+dimensions), has the same WordPiece tokenizer but reads only 256 tokens: on this corpus it would truncate 369 of 1,503
+passages (24.6%), against bge-small's 1 (`scripts/token_fit.py`; "Chunking" above). (Its authors also report it the
+stronger retriever on the public MTEB benchmark; not measured here, and day 4's evaluation is the test that counts.)
+
+**What is embedded.** A chunk's heading path, page title first, joined by ` > `, a blank line, then the chunk text
+(`passage_text`). A chunk alone often doesn't say what it is about ("As query parameters are not a fixed part of a
+path...") and its heading line isn't chunk text, so the path supplies what the rendered page shows above it. A question
+gets the prefix the model's authors give for search queries ("Represent this sentence for searching relevant passages:
+"); passages get none. Vectors are scaled to unit length, so cosine distance is 1 minus the dot product.
+
+**The interface.** `Embedder` has a `name` (the model and its revision: what `corpus_settings.embedding_model` holds), a
+`dimension`, and separate `embed_passages` and `embed_query`. Two implementations:
+
+- `SentenceTransformerEmbedder`, the real one: the optional `embed` extra (`pip install -e '.[embed]'`), loaded only
+  when a command needs vectors. It checks the model's dimension against the column's.
+- `HashEmbedder`, a stub with no dependencies for tests: each token (as the chunker counts them, lowercased) adds +1 or
+  -1 to one of 384 buckets, both chosen by a hash; the sum is scaled to unit length. Texts sharing tokens get similar
+  vectors, so tests can predict rankings; it knows nothing of meaning. A text with no tokens gets a fixed unit vector
+  (cosine distance to a zero vector is undefined; pgvector returns NaN).
+
+`recall ingest --embedder model|hash` (default `model`, or `$RECALL_EMBEDDER`) chooses one. Search refuses vectors made by
+another model than the one embedding the question: they would be compared in different spaces.
+
+## Retrieval
+
+`recall.retrieval` has three retrievers, each one SQL query, and `search`, which picks one, embeds the question when
+needed and checks the model. Each returns `Hit`s: the chunk, its page, title, URL with the section's anchor, heading
+path, span, score, and its rank in each retriever's list.
+
+**Full-text.** The question is split at whitespace; each word becomes `phraseto_tsquery('english', word)` and the words
+are ORed. OR, because `plainto_tsquery` ANDs every word, so a chunk would need all of them, and questions are written
+in more words than any passage shares. A phrase per word, because the parser splits identifiers:
+`response_model_exclude_unset` is four lexemes, and ORing them ranked every chunk about response models above the one
+about that parameter (it was 4th; as a phrase, 1st). Words that are only stop words drop out; a question with none
+left matches nothing. Chunks matching the query (through the GIN index) are ranked by `ts_rank_cd` with the A/B/D
+weights (1.0, 0.4, 0.1) and normalization 1 (divided by 1 + log of the chunk's length). This is not BM25: ts_rank_cd
+counts how often and how close together the words occur but has no inverse document frequency, so a common word
+("return", "response") counts as much as a rare one. The smoke questions show the cost (a question in common words
+misses its page); day 4 measures BM25-style IDF weighting against it on the labelled set.
+
+**Vector.** `ORDER BY embedding <=> question LIMIT n` through the HNSW index, with row numbers taken outside that
+subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan returns at most
+`hnsw.ef_search` rows (pgvector's default 40), so each query raises it to the list length for its own transaction;
+before that, a list of 50 came back with 40.
+
+**Hybrid.** Both retrievers' top `candidates` (default 50) as two CTEs of one query, fused by reciprocal rank fusion
+(Cormack, Clarke and Buettcher, 2009): score = the sum, over the lists a chunk is in, of 1 / (60 + rank). One query
+means one snapshot and one round trip. RRF uses ranks, not scores, so it needs no calibration between ts_rank_cd and
+cosine similarity; its known cost is that a chunk both lists rank moderately beats one that only one list ranks high
+(the smoke test's CORS question: frontend.md at full-text 6 and vector 2 scores 0.03128, cors.md at 4 and 4 scores
+0.03125). Ties go to the lower chunk id, so results repeat. `candidates` bounds how deep in one list a chunk can be and
+still be fused in.
+
+`recall search QUESTION --mode hybrid|full-text|vector -k 10` prints the hits; full-text search loads no model.
 
 ## The local database
 
@@ -216,10 +298,10 @@ flowchart LR
         B -->|normalize| C[plain Markdown]
         C -->|chunk| D[chunks with spans]
         D -->|recall ingest| E[(PostgreSQL 17<br/>documents, chunks)]
-        E -.->|day 2: embed| F[(pgvector HNSW)]
-        E -.->|day 2: tsvector| G[(full-text GIN)]
+        E -->|embed: bge-small| F[(pgvector HNSW)]
+        E -->|generated tsvector| G[(full-text GIN)]
     end
-    subgraph online["Answer a question (days 2-3)"]
+    subgraph online["Answer a question (day 2: retrieval; day 3: the rest)"]
         Q[question] --> V[vector top-k]
         Q --> K[full-text top-k]
         F --> V
@@ -238,17 +320,15 @@ flowchart LR
 
 ## Later days (plan)
 
-- **Day 2, retrieval.** Embeddings with a small sentence-transformers model on CPU (384 dimensions), stored in
-  pgvector with an HNSW index; full-text retrieval with `ts_rank_cd` over a weighted `tsvector` (title and heading path
-  weighted above body); hybrid retrieval by reciprocal rank fusion (`score = sum 1 / (k + rank)`, k = 60), with each
-  retriever's own top-k kept for the ablation.
+- **Day 2, retrieval.** Done: "Embeddings" and "Retrieval" above.
 - **Day 3, answers.** A provider interface for the LLM (a recorded provider by default, so tests and CI need no key;
   a live provider only when an environment variable enables it), an extractive fallback that answers with the best
   sentences when no LLM is configured, a cross-encoder reranker, citation checking (every cited span must be one of the
   retrieved chunks), and the API.
 - **Day 4, evaluation.** A labelled question set (synthetic, written against the pinned corpus, each question with its
   gold chunk spans), recall@k and MRR per retriever, faithfulness checks on answers, and a CI job that fails when
-  recall@k drops below the committed baseline.
+  recall@k drops below the committed baseline. Also BM25-style weighting (inverse document frequency) for full-text
+  search, measured against ts_rank_cd, and the choice of `candidates` and the RRF k.
 - **Day 5.** The ablation table (full-text vs vector vs hybrid vs hybrid + rerank), README results, WALKTHROUGH.md,
   v1.0.0.
 
@@ -269,7 +349,19 @@ flowchart LR
   syntax left and chunks within the invariants at two sizes; the manifest holds exactly what the pages use; a pin of
   the corpus's chunk count for the current `CHUNKER_VERSION`. Skipped when no corpus has been fetched.
 - **The local cluster** (`tests/test_pg_script.py`): `scripts/pg.sh` end to end on a throwaway cluster.
-- **CI**, three jobs: lint (ruff), types (mypy, strict) and the tests with the pgvector service container; a corpus
+- **Embeddings and retrieval** (day 2): the hash embedder's properties; ingest's embedding step (vectors equal to a
+  fresh embedding of each passage, only new chunks embedded, a new model re-embedding everything with chunk ids kept,
+  failures part way rolling back, a day-1 database migrated in place); the generated search vector's lexemes and
+  weights; each retriever on small corpora whose rankings are predictable; hybrid checked against a Python fusion of
+  the two retrievers' own lists (Hypothesis over questions, k, candidates and the RRF k); questions holding tsquery
+  syntax or nothing searchable; `EXPLAIN` showing both indexes usable.
+- **The real model** (`-m model`): unit-length 384-wide vectors, the model ranking three obvious passages right, and
+  `tests/test_real_retrieval.py`: the real corpus ingested with the real model and searched in every mode (a smoke
+  test with six hand-written questions, not an evaluation). They skip without the `embed` extra, except in CI's model
+  job.
+- **CI**, four jobs: lint (ruff), types (mypy, strict) and the tests with the pgvector service container; a corpus
   job that fetches the real pinned archive from GitHub, checks it against the manifest and runs the real-corpus tests;
-  and a pg-script job that installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test. The last
-  two set an environment variable that turns their tests' skips into failures.
+  a pg-script job that installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test; and a model
+  job (CPU-only PyTorch, the model cached between runs) that runs the `model` tests on the real corpus and writes the
+  token fit and the smoke questions' ranks to the run's summary. The last three set an environment variable that turns
+  their tests' skips into failures.

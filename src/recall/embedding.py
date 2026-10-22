@@ -91,7 +91,7 @@ class ModelSpec:
     repo: str
     revision: str  # a commit of the model repository, so a re-upload can't change the vectors under us
     dimension: int
-    max_seq_length: int  # model tokens; longer input is truncated by the model, so ingest checks the fit
+    max_seq_length: int  # model tokens; the model truncates longer input (scripts/token_fit.py measures the fit)
     query_prefix: str  # what the model's authors say to put before a search query (passages get none)
 
     @property
