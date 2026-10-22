@@ -177,7 +177,8 @@ def test_migrating_a_day_one_database_keeps_its_chunks_and_the_next_ingest_embed
 
 def test_the_indexes_exist(conn: psycopg.Connection):
     rows = conn.execute(
-        "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'chunks' AND indexname LIKE 'chunks_%%'"
+        "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'chunks'"
+        " AND indexname LIKE 'chunks_%%'"
         " ORDER BY indexname"
     ).fetchall()
     assert [(name, "hnsw" in d, "gin" in d) for name, d in rows if "embedding" in name or "search" in name] == [
