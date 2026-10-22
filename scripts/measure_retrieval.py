@@ -28,7 +28,7 @@ import psycopg
 from recall import db, retrieval
 from recall.embedding import SentenceTransformerEmbedder
 
-EF_SEARCH = (10, 20, 40, 100)
+EF_SEARCH = (10, 20, 40, 60, 100)
 
 
 def questions(conn: psycopg.Connection, n: int) -> list[str]:
@@ -40,29 +40,35 @@ def questions(conn: psycopg.Connection, n: int) -> list[str]:
     return titles[:n]
 
 
+_KNN = "SELECT id FROM chunks ORDER BY embedding <=> %s::vector LIMIT %s"
+
+
+def _settings(conn: psycopg.Connection, exact: bool, ef_search: int) -> None:
+    # The planner picks a sequential scan over the index once ef_search is high enough for this table (about 80 to
+    # 100 at 1,503 rows), so each side forces its own plan; check_plan verifies it.
+    conn.execute("SET LOCAL enable_indexscan = off" if exact else "SET LOCAL enable_seqscan = off")
+    conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(ef_search),))
+
+
 def nearest(conn: psycopg.Connection, vector: str, k: int, *, exact: bool, ef_search: int = 40) -> list[int]:
     with conn.transaction():
-        if exact:
-            conn.execute("SET LOCAL enable_indexscan = off")
-        conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(ef_search),))
-        rows = conn.execute("SELECT id FROM chunks ORDER BY embedding <=> %s::vector LIMIT %s", (vector, k)).fetchall()
+        _settings(conn, exact, ef_search)
+        rows = conn.execute(_KNN, (vector, k)).fetchall()
     return [r[0] for r in rows]
 
 
-def check_plans(conn: psycopg.Connection, vector: str) -> None:
+def plan_of(conn: psycopg.Connection, sql: str, params: tuple[object, ...], setup: Callable[[], object]) -> str:
+    with conn.transaction():
+        setup()
+        plan = "\n".join(r[0] for r in conn.execute(("EXPLAIN " + sql).encode(), params))
+    return "HNSW index" if "chunks_embedding_hnsw" in plan else "sequential scan" if "Seq Scan" in plan else plan
+
+
+def check_plan(conn: psycopg.Connection, vector: str, k: int, *, exact: bool, ef_search: int) -> None:
     """Fail unless the exact query really scans and the HNSW one really uses the index."""
-    for exact, wanted in ((True, "Seq Scan"), (False, "chunks_embedding_hnsw")):
-        with conn.transaction():
-            if exact:
-                conn.execute("SET LOCAL enable_indexscan = off")
-            plan = "\n".join(
-                r[0]
-                for r in conn.execute(
-                    "EXPLAIN SELECT id FROM chunks ORDER BY embedding <=> %s::vector LIMIT 10", (vector,)
-                )
-            )
-        if wanted not in plan:
-            sys.exit(f"the {'exact' if exact else 'HNSW'} query's plan has no {wanted}:\n{plan}")
+    got = plan_of(conn, _KNN, (vector, k), lambda: _settings(conn, exact, ef_search))
+    if got != ("sequential scan" if exact else "HNSW index"):
+        sys.exit(f"the {'exact' if exact else 'HNSW'} query at ef_search {ef_search} has the plan: {got}")
 
 
 def timed(fn: Callable[[], object]) -> float:
@@ -95,11 +101,12 @@ def main() -> int:
 
         floats = {q: embedder.embed_query(q) for q in warm + qs}
         vectors = {q: db.vector_literal(v) for q, v in floats.items()}
-        check_plans(conn, vectors[qs[0]])
         print("| ef_search | HNSW recall@k vs exact (mean) | questions with all k |")
         print("|---|---|---|")
+        check_plan(conn, vectors[qs[0]], args.k, exact=True, ef_search=40)
         exact = {q: nearest(conn, vectors[q], args.k, exact=True) for q in qs}
         for ef in EF_SEARCH:
+            check_plan(conn, vectors[qs[0]], args.k, exact=False, ef_search=ef)
             hits = [len(set(nearest(conn, vectors[q], args.k, exact=False, ef_search=ef)) & set(exact[q])) for q in qs]
             full = sum(1 for h in hits if h == args.k)
             print(f"| {ef} | {sum(hits) / (args.k * len(qs)):.4f} | {full} of {len(qs)} |")
@@ -111,6 +118,16 @@ def main() -> int:
             "hybrid query": lambda q: retrieval.hybrid(conn, q, floats[q], args.k),
             "hybrid end to end": lambda q: retrieval.search(conn, q, embedder, "hybrid", args.k),
         }
+        # Which plan retrieval.vector's query gets, as it sets things (ef_search max(k, floor), iterative scan).
+        floor = retrieval.EF_SEARCH_MIN
+        for n in sorted({args.k, retrieval.DEFAULT_CANDIDATES}):
+
+            def as_retrieval(n: int = n) -> None:
+                conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(n, floor)),))
+                conn.execute("SELECT set_config('hnsw.iterative_scan', 'strict_order', true)")
+
+            print(f"\nretrieval's vector query for {n} rows (ef_search {max(n, floor)}) uses: ", end="")
+            print(plan_of(conn, _KNN, (vectors[qs[0]], n), as_retrieval))
         print("\n| step | p50 ms | p95 ms | p99 ms | max ms |")
         print("|---|---|---|---|---|")
         for name, step in steps.items():

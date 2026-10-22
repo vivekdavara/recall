@@ -24,10 +24,10 @@ DEFAULT_K = 10
 DEFAULT_CANDIDATES = 50
 # The k in 1 / (k + rank), as in Cormack, Clarke and Buettcher (2009): large enough that rank 1 doesn't dominate.
 RRF_K = 60
-# The smallest hnsw.ef_search a query uses (pgvector's default is 40). On the real corpus, top 10 against an exact
-# scan for 300 questions: 0.9893 of the exact top 10 at 40 (277 questions got all 10), 1.0000 at 100
-# (scripts/measure_retrieval.py). It costs time: the vector query's p50 went from 0.84 to 2.43 ms.
-_EF_SEARCH_MIN = 100
+# The smallest hnsw.ef_search a query uses: pgvector's default. Raising it to 100 looked like exact top-10 results,
+# but on this corpus's 1,503 rows the planner switches to a sequential scan once ef_search is about 80 to 100, so that
+# was an exact scan, not HNSW (scripts/measure_retrieval.py now forces and checks each plan).
+EF_SEARCH_MIN = 40
 # pgvector's largest ef_search. A list is at most this long, so ef_search can always be raised to the list length.
 MAX_K = 1000
 # Distinct searchable words of a question used by full-text search (see _FULL_TEXT).
@@ -213,7 +213,7 @@ def _hits(conn: psycopg.Connection, sql: str, params: dict[str, Any], *, ef_sear
             # drops the dead ones (rows an ingest updated or deleted stay in the index until VACUUM), so even with
             # ef_search at the list length the list came back short after an ingest that rewrote chunks: 31 of 60
             # after a model change. An iterative scan keeps searching until the LIMIT is met, in distance order.
-            conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(ef_search, _EF_SEARCH_MIN)),))
+            conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(ef_search, EF_SEARCH_MIN)),))
             conn.execute("SELECT set_config('hnsw.iterative_scan', 'strict_order', true)")
         rows = conn.execute(sql.encode(), params).fetchall()
     return [

@@ -102,3 +102,22 @@ def test_print_every_modes_rank_for_each_question(conn: psycopg.Connection, embe
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
             f.write("### Smoke questions on the real corpus (rank of the page, top 10)\n\n" + table + "\n")
+
+
+def test_a_top_10_vector_query_uses_the_hnsw_index_on_the_real_table(conn: psycopg.Connection, embedder: Any):
+    """With retrieval's own settings for 10 rows, the planner must choose the index. On these 1,503 rows it chooses
+    by cost between the index and a sequential scan: a scan once ef_search is about 80 to 100 (why EF_SEARCH_MIN stays
+    at pgvector's default 40: at 100 this test fails), and already for hybrid's 50 candidates (ef_search 50) in a
+    freshly analyzed table. Both give a full list; the scan is exact. So only the 10-row plan is pinned."""
+    from recall.db import vector_literal
+
+    v = vector_literal(embedder.embed_query("how do I give a query parameter a default value?"))
+    # With the statistics autovacuum would gather: a table just loaded has none, and then the planner takes the index
+    # whatever ef_search is (this test passed with the floor at 100 until it analyzed).
+    conn.execute("ANALYZE chunks")
+    with conn.transaction():
+        conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(10, retrieval.EF_SEARCH_MIN)),))
+        conn.execute("SELECT set_config('hnsw.iterative_scan', 'strict_order', true)")
+        sql = f"EXPLAIN WITH {retrieval._VECTOR} SELECT * FROM vec"
+        plan = "\n".join(r[0] for r in conn.execute(sql.encode(), {"vector": v, "n": 10}))
+    assert "Index Scan using chunks_embedding_hnsw" in plan, plan
