@@ -1,7 +1,8 @@
 # Walkthrough
 
 Questions an interviewer is likely to ask about Recall, with short answers grounded in the code. Day 1 covers the
-corpus, normalization, chunking, storage and ingest; later days add their own sections.
+corpus, normalization, chunking, storage and ingest; day 2 embeddings and retrieval; later days add their own
+sections.
 
 ## The project
 
@@ -16,6 +17,12 @@ Everything before retrieval: fetching a pinned corpus and proving it is the righ
 FastAPI's Markdown into plain Markdown (`corpus/normalize.py`), chunking with checked invariants (`chunking.py`), the
 schema and an idempotent ingest (`ingest.py`, `migrations/001_...sql`), a local PostgreSQL 17 cluster
 (`scripts/pg.sh`), and CI with a pgvector service container plus a job that fetches the real corpus.
+
+**What did day 2 build?**
+Retrieval. Chunks are embedded with a small local model (`embedding.py`) inside ingest's transaction and stored in
+pgvector with an HNSW index; a generated, weighted `tsvector` gives full-text search (`migrations/002_retrieval.sql`);
+`retrieval.py` has full-text, vector and hybrid retrieval, the last fusing the other two by reciprocal rank fusion in
+one SQL query; `recall search` runs them; a CI job runs the real model on the real corpus.
 
 ## The corpus
 
@@ -154,8 +161,10 @@ so a change that alters chunks fails a test until the version is raised and the 
 
 **Why one transaction for the whole ingest?**
 Readers see the old corpus or the new one, never a mix, and a failure part way (a row PostgreSQL refuses) leaves the
-previous corpus (`test_a_failure_part_way_leaves_the_previous_corpus`). At 1,503 chunks it takes well under a second.
-For a much bigger corpus I would load into a staging table and swap, to keep the transaction short.
+previous corpus (`test_a_failure_part_way_leaves_the_previous_corpus`). Writing 1,503 chunks takes well under a
+second; embedding them, since day 2, about 40 s on a laptop CPU, inside the same transaction. For a much bigger corpus
+I would embed outside the transaction (vectors keyed by the passage text's hash) and load into a staging table and
+swap, to keep the transaction short.
 
 **What if two ingests run at once?**
 They queue on an advisory lock taken at the start of the transaction; under READ COMMITTED, the second one's reads
@@ -194,6 +203,94 @@ than a Unix socket path may be on macOS.
 Yes, on the pg-script job's first run: `start` wrote initdb's log beside the data directory before creating it, so a
 data directory whose parent didn't exist failed. Here `.scratch/` already existed (the review worktree was in it); a
 fresh checkout doesn't have it. `start` now creates the parent, and the test starts in a parent that doesn't exist.
+
+## Embeddings (day 2)
+
+**Which model, and why?**
+`BAAI/bge-small-en-v1.5`: 384 dimensions, 33.4M parameters, MIT-licensed, fast enough on a CPU (about 40 s for the
+whole corpus). The deciding measurement was input length: `scripts/token_fit.py` counts every passage in the model's own
+tokens. Passages are p50 187 and max 723 model tokens; bge-small reads 512, so 1 of 1,503 is truncated, while
+all-MiniLM-L6-v2 (same tokenizer, 256 tokens) would truncate 369, a quarter of them.
+
+**Why not an API model like OpenAI's embeddings?**
+The project's rule is that everything runs on a laptop with no key, and tests and CI must never need one. A local
+model also makes every vector reproducible from a pinned revision.
+
+**What exactly is embedded?**
+The heading path, page title first, then the chunk text (`passage_text`). A chunk often doesn't name its subject ("As
+query parameters are not a fixed part of a path...") and its heading isn't chunk text, so the path adds what the
+rendered page shows above it. Questions get the prefix bge's authors give for queries; passages get none.
+
+**How do you keep vectors from two models apart?**
+`corpus_settings.embedding_model` names the model and revision that made the stored vectors. Ingest with another model
+sets every vector to NULL and embeds them all again (chunks keep their ids:
+`test_a_new_model_embeds_every_chunk_again_and_keeps_the_chunks`), and `search` refuses to compare a question
+embedded by one model with vectors from another (`ModelMismatch`).
+
+**What is the hash embedder?**
+A stub for tests with no dependencies: each token adds +1 or -1 to one of 384 buckets chosen by a hash, then the vector
+is scaled to unit length. Texts that share words get similar vectors, so a test can predict a ranking exactly; it knows
+nothing of meaning. It keeps PyTorch out of the main CI job; the real model has its own job.
+
+**What if the model fails half way through an ingest?**
+Embedding is inside ingest's transaction, so everything rolls back, vectors included
+(`test_a_model_failing_part_way_leaves_the_previous_corpus_and_vectors`). So do a model of the wrong dimension, one
+returning too few vectors, and a NaN (pgvector refuses it).
+
+## Retrieval (day 2)
+
+**How does full-text search work here?**
+A generated `tsvector` column: the page title weighted A, the headings under it B, the text D, with the `english`
+configuration (stemming, stop words), and a GIN index. The question is split at whitespace, each word becomes
+`phraseto_tsquery`, and the words are ORed; matches are ranked by `ts_rank_cd`, normalized by log length.
+
+**Why OR, and why a phrase per word?**
+`plainto_tsquery` ANDs every word, and a question has more words than any passage shares, so AND finds little. The
+phrase is for identifiers: the parser splits `response_model_exclude_unset` into four lexemes, and ORing them ranked
+everything about response models above the section on that parameter (4th). As a phrase the four must be adjacent, and
+it is 1st (`test_an_identifier_matches_as_written_not_as_its_parts`).
+
+**Is that BM25?**
+No. `ts_rank_cd` uses how often and how close together the words occur, with weights and length normalization, but no
+inverse document frequency, so "return" counts as much as "HTTPException". The smoke test shows the cost: "How can I run
+a function after returning the response?" doesn't find background-tasks.md in full-text's top 10. Day 4 measures
+IDF weighting against it on labelled questions, instead of me guessing from a handful.
+
+**Why does the generated column need a wrapper function?**
+A generated column may only call IMMUTABLE functions, and `array_to_string` is STABLE (an element type's output can
+depend on settings, like a timestamp's on DateStyle). For `text[]` nothing changes it, so `heading_text` declares that;
+its SQL-standard body is bound at creation, so a later search path can't redirect it.
+
+**How does vector search use the index?**
+`ORDER BY embedding <=> question LIMIT n` is the shape the HNSW index serves; the row numbers are taken outside that
+subquery so it stays that shape (`test_the_vector_query_can_use_the_hnsw_index` checks the plan).
+
+**What is ef_search, and why do you set it?**
+The size of HNSW's candidate list during a search; bigger is more accurate and slower. A scan returns at most ef_search
+rows, and pgvector's default is 40, so a request for 50 came back with 40
+(`test_vector_search_returns_k_rows_beyond_the_default_ef_search`). Each query raises it to its list length for its own
+transaction.
+
+**How does hybrid retrieval combine the two lists?**
+Reciprocal rank fusion: each chunk scores the sum, over the lists it is in, of 1 / (60 + rank); the top 50 of each
+list go in. Ranks rather than scores, because ts_rank_cd and cosine similarity aren't on one scale and RRF needs no
+calibration. Both retrievers are CTEs of one query, so they see one snapshot and cost one round trip.
+
+**What does RRF get wrong?**
+It rewards agreement: a chunk both lists rank moderately beats one that only one list ranks high. In the smoke test,
+for "Allow a frontend on another origin to call my API", frontend.md (full-text 6, vector 2: 0.03128) edges out
+cors.md (4 and 4: 0.03125), though each retriever alone ranks cors.md first. And for "How do I return a custom status
+code for an error?", vector has handling-errors.md 4th, but full-text doesn't have it, so hybrid drops it out of the
+top 10.
+
+**How do you know the hybrid SQL is right?**
+A differential test: for random questions, k, candidate counts and RRF k, `hybrid` must equal a Python fusion of
+`full_text` and `vector`'s own lists, ranks, scores and tie order included (`test_hybrid_is_the_fusion_of_the_two_lists`).
+Mutating the SQL (the wrong rank in one term, the tie order) fails it.
+
+**Why the 1 / (60 + rank) constant?**
+k = 60 comes from the paper that introduced RRF (Cormack, Clarke and Buettcher, 2009); it keeps rank 1 from
+dominating. It and the 50 candidates are defaults, not tuned; day 4's eval is where they get measured.
 
 ## The reviews
 
