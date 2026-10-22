@@ -207,3 +207,35 @@ def test_the_indexes_exist(conn: psycopg.Connection):
         ("chunks_embedding_hnsw", True, False),
         ("chunks_search_vector_gin", False, True),
     ]
+
+
+def test_dead_index_entries_from_an_ingest_dont_shorten_a_vector_list(conn: psycopg.Connection):
+    """An iterative HNSW scan stops after hnsw.max_scan_tuples visited entries, dead ones included (the second day-2
+    review: 21,000 deleted chunks near a question left an empty list). Ingest vacuums after a change, so the 1,000
+    chunks it removed here are gone from the index. The limit is scaled down from 20,000 with the corpus: without
+    the VACUUM a short list comes back here (3 or 4 rows of 10 in the runs I made)."""
+    from recall.retrieval import vector
+
+    conn.execute("ALTER TABLE chunks SET (autovacuum_enabled = false)")  # as if autovacuum hadn't got there yet
+    near = [Document(f"n{i:04}.md", "N", "u", f"alpha beta n{i}\n") for i in range(1000)]
+    far = [Document(f"f{i:03}.md", "F", "u", f"omega zeta f{i}\n") for i in range(50)]
+    run(conn, near + far)
+    run(conn, far)
+    conn.execute("SET hnsw.max_scan_tuples = 1")
+    assert len(vector(conn, HashEmbedder().embed_query("alpha beta"), k=10)) == 10
+
+
+def test_an_ingest_that_changed_nothing_doesnt_vacuum(conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch):
+    run(conn, DOCS)
+    statements: list[str] = []
+    real_execute = psycopg.Connection.execute
+
+    def spy(self: psycopg.Connection, query: object, *args: object, **kwargs: object) -> object:
+        statements.append(str(query))
+        return real_execute(self, query, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(psycopg.Connection, "execute", spy)
+    run(conn, DOCS)
+    assert not any("VACUUM" in q for q in statements)
+    run(conn, DOCS[:2])
+    assert any("VACUUM" in q for q in statements)

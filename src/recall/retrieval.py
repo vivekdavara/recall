@@ -225,7 +225,9 @@ def _hits(conn: psycopg.Connection, sql: str, params: dict[str, Any], *, ef_sear
             # Both local to this transaction. An HNSW scan picks its ef_search nearest index entries and only then
             # drops the dead ones (rows an ingest updated or deleted stay in the index until VACUUM), so even with
             # ef_search at the list length the list came back short after an ingest that rewrote chunks: 31 of 60
-            # after a model change. An iterative scan keeps searching until the LIMIT is met, in distance order.
+            # after a model change. An iterative scan keeps searching, in distance order, until the LIMIT is met or
+            # it has visited hnsw.max_scan_tuples entries (20,000), dead ones included; ingest vacuums after it
+            # changes anything, so only rows deleted some other way can use that up.
             conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(ef_search, EF_SEARCH_MIN)),))
             conn.execute("SELECT set_config('hnsw.iterative_scan', 'strict_order', true)")
         rows = conn.execute(sql.encode(), params).fetchall()

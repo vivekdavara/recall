@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import psycopg
+from psycopg import pq
 
 from recall import db
 from recall.chunking import CHUNKER_VERSION, chunk_document
@@ -102,6 +103,12 @@ def ingest(
             " embedding_model = excluded.embedding_model, updated_at = now()",
             (*settings, embedder.name),
         )
+    if (added or updated or removed or embedded) and conn.info.transaction_status == pq.TransactionStatus.IDLE:
+        # Rows this ingest replaced or deleted stay in the HNSW index until VACUUM, and an HNSW scan visits them: past
+        # hnsw.max_scan_tuples (20,000) of them near a question, an iterative scan gives up with a short list (the
+        # day-2 review). ANALYZE gives the planner the new table's statistics. VACUUM can't run in a transaction, so
+        # inside a caller's it is left to autovacuum.
+        conn.execute("VACUUM (ANALYZE) documents, chunks")
     return IngestReport(added, updated, unchanged, removed, written, embedded)
 
 
