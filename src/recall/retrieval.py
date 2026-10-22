@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import psycopg
+from psycopg import pq
 
 from recall.db import vector_literal
 from recall.embedding import Embedder
@@ -177,16 +178,17 @@ def search(
     *,
     candidates: int = DEFAULT_CANDIDATES,
 ) -> list[Hit]:
-    """Retrieve with one mode, embedding the question when the mode needs it. Needs an autocommit connection
-    (recall.db.connect makes one): the model check and the query run in one transaction of their own."""
+    """Retrieve with one mode, embedding the question when the mode needs it. The model check and the query run in
+    one transaction of their own, so the connection must not be inside a transaction already."""
     if mode not in MODES:
         raise ValueError(f"mode must be one of {', '.join(MODES)}, not {mode!r}")
     if mode == "full-text":
         return full_text(conn, question, k)
     if embedder is None:
         raise ValueError(f"{mode} retrieval needs an embedder")
-    if not conn.autocommit:
-        raise ValueError("search needs an autocommit connection (recall.db.connect makes one)")
+    if conn.info.transaction_status != pq.TransactionStatus.IDLE:
+        # Inside the caller's transaction, ours would be a savepoint, where SET TRANSACTION can't run.
+        raise ValueError("search runs its own transaction: call it outside one")
     query_vector = embedder.embed_query(question)
     # One snapshot for the check and the query: in two, an ingest with another model committing between them would
     # pair this question's vector with that model's vectors, the mix the check exists to refuse.

@@ -6,6 +6,7 @@ import random
 
 import psycopg
 import pytest
+from conftest import connect_to
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from test_ingest import COMMIT
@@ -264,11 +265,36 @@ def test_an_unknown_mode_is_refused_not_run_as_hybrid(conn: psycopg.Connection):
         search(conn, "x", HashEmbedder(), "fulltext", 3)  # type: ignore[arg-type]
 
 
-def test_search_needs_an_autocommit_connection(conn: psycopg.Connection):
+def test_search_runs_on_a_connection_outside_a_transaction(conn: psycopg.Connection):
     load(conn)
     conn.autocommit = False
-    with pytest.raises(ValueError, match="autocommit"):
+    assert search(conn, "pydantic", HashEmbedder(), "vector", 1)[0].path == "body.md"
+    with conn.transaction(), pytest.raises(ValueError, match="call it outside one"):
         search(conn, "x", HashEmbedder(), "vector", 3)
+
+
+def test_an_ingest_committed_between_the_check_and_the_query_is_not_seen(
+    schema: str, conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    """The model check and the query share one snapshot: an ingest with another model that commits right after the
+    check passed must not reach the query (under READ COMMITTED it would: the question's hash vector would be ranked
+    against the other model's vectors)."""
+    from test_ingest_embedding import Revised
+
+    docs = many_documents(20)
+    load(conn, docs)
+    question = HashEmbedder().embed_query("alpha beta")
+    before = vector(conn, question, 5)
+    check = retrieval.check_model
+
+    def check_then_race(c: psycopg.Connection, embedder: object) -> None:
+        check(c, embedder)  # type: ignore[arg-type]
+        with connect_to(schema) as other:
+            ingest(other, docs, source_commit=COMMIT, max_tokens=64, embedder=Revised())
+
+    monkeypatch.setattr(retrieval, "check_model", check_then_race)
+    assert search(conn, "alpha beta", HashEmbedder(), "vector", 5) == before
+    assert retrieval.stored_model(conn) == "another-model"
 
 
 def test_only_the_first_distinct_words_of_a_long_question_are_searched(conn: psycopg.Connection):

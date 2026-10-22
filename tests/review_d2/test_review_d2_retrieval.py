@@ -126,7 +126,11 @@ def test_vector_with_k_over_1000_in_a_fresh_session_is_not_silently_cut_to_40(sc
 
 
 def test_search_never_compares_a_question_vector_with_another_models_vectors(schema: str, conn: psycopg.Connection):
-    """search() calls check_model (one statement, its own snapshot), then embeds the question, then runs the query in
+    """(Since 9c93d03 the question is embedded before the check, so this race now lands before the check and
+    the test passes whatever the isolation level; test_retrieval's
+    test_an_ingest_committed_between_the_check_and_the_query_is_not_seen races between the check and the query.)
+
+    search() calls check_model (one statement, its own snapshot), then embeds the question, then runs the query in
     a new transaction. An ingest with another model that commits in between (embedding a question with the real
     model takes tens of milliseconds) is not seen by the check but is seen by the query: the hash embedder's question
     vector is ranked against the other model's vectors, the mix the check exists to refuse. Correct: the model

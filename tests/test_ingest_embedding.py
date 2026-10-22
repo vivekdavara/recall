@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -33,6 +34,27 @@ class Renamed(HashEmbedder):
     @property
     def name(self) -> str:
         return "another-model"
+
+
+class Revised(HashEmbedder):
+    """Another model with vectors near the hash embedder's but not equal, as a new revision's would be. (Renamed's
+    identical vectors hid the day-2 review's finding A: pgvector keeps identical vectors as one HNSW element.)"""
+
+    @property
+    def name(self) -> str:
+        return "another-model"
+
+    def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
+        return [nudge(v) for v in super().embed_passages(texts)]
+
+    def embed_query(self, text: str) -> list[float]:
+        return nudge(super().embed_query(text))
+
+
+def nudge(v: list[float]) -> list[float]:
+    w = [*v[:-1], v[-1] + 0.05]
+    norm = math.sqrt(sum(x * x for x in w))
+    return [x / norm for x in w]
 
 
 class Failing(HashEmbedder):
