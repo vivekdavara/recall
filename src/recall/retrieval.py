@@ -47,15 +47,23 @@ class ModelMismatch(RuntimeError):
     """The stored vectors weren't made by the embedder asked to search them."""
 
 
-# An OR of the question's words: plainto_tsquery ANDs them, so a chunk would have to hold every word. The text form
-# of a tsquery quotes each lexeme and a lexeme never holds whitespace, so ' & ' can only be the operator.
+# An OR over the question's words (split at whitespace), each word a phrase of its lexemes. OR, because
+# plainto_tsquery ANDs every word, so a chunk would have to hold all of them. A phrase, because the parser splits an
+# identifier: response_model_exclude_unset is four lexemes, and ORing those four ranks every chunk about response
+# models above the one about that parameter; as a phrase they must be adjacent, as they are in the identifier. A
+# word that is only stop words (or punctuation) has no lexemes and is left out. The text form of a tsquery quotes
+# each lexeme, so wrapping each phrase in parentheses and joining with ' | ' can't change what a lexeme says.
 _FULL_TEXT = """
 fts AS (
     SELECT id, score, row_number() OVER (ORDER BY score DESC, id) AS rank
     FROM (
         SELECT c.id, ts_rank_cd(c.search_vector, q.query, 1) AS score
-        FROM chunks c,
-            (SELECT replace(plainto_tsquery('english', %(question)s)::text, ' & ', ' | ')::tsquery AS query) q
+        FROM chunks c, (
+            SELECT string_agg('(' || phrase::text || ')', ' | ' ORDER BY w.n)::tsquery AS query
+            FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),
+                LATERAL phraseto_tsquery('english', w.word) AS phrase
+            WHERE numnode(phrase) > 0
+        ) q
         WHERE c.search_vector @@ q.query
         ORDER BY score DESC, c.id
         LIMIT %(n)s

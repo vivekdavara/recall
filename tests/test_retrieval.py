@@ -231,3 +231,24 @@ def test_the_full_text_query_can_use_the_gin_index(conn: psycopg.Connection):
     load(conn)
     sql = f"WITH {retrieval._FULL_TEXT} SELECT * FROM fts"
     assert "chunks_search_vector_gin" in plan(conn, sql, {"question": "default values", "n": 5})
+
+
+def test_an_identifier_matches_as_written_not_as_its_parts(conn: psycopg.Connection):
+    load(
+        conn,
+        [
+            Document("id.md", "Settings", "https://x/id/", "# Settings\n\nSet response_model_exclude_unset to skip.\n"),
+            Document(
+                "parts.md",
+                "Response Model",
+                "https://x/parts/",
+                "# Response Model\n\nA response model can exclude fields, or unset ones; the response model again.\n",
+            ),
+        ],
+    )
+    # The parser splits the identifier into respons, model, exclud, unset; parts.md has all four, more often and in
+    # its title, but not next to each other.
+    assert where(full_text(conn, "response_model_exclude_unset")) == ["id/"]
+    assert where(full_text(conn, "the response_model_exclude_unset parameter")) == ["id/"]
+    # Separate words still match separately.
+    assert where(full_text(conn, "response model exclude unset")) == ["parts/", "id/"]
