@@ -239,3 +239,6 @@ def test_an_ingest_that_changed_nothing_doesnt_vacuum(conn: psycopg.Connection, 
     assert not any("VACUUM" in q for q in statements)
     run(conn, DOCS[:2])
     assert any("VACUUM" in q for q in statements)
+    statements.clear()
+    run(conn, DOCS[:2], Revised())  # a new model: nothing but vectors rewritten, which leaves dead entries too
+    assert any("VACUUM" in q for q in statements)

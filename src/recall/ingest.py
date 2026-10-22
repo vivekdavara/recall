@@ -3,6 +3,7 @@ on new settings, re-embed on a new model."""
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -103,12 +104,8 @@ def ingest(
             " embedding_model = excluded.embedding_model, updated_at = now()",
             (*settings, embedder.name),
         )
-    if (added or updated or removed or embedded) and conn.info.transaction_status == pq.TransactionStatus.IDLE:
-        # Rows this ingest replaced or deleted stay in the HNSW index until VACUUM, and an HNSW scan visits them: past
-        # hnsw.max_scan_tuples (20,000) of them near a question, an iterative scan gives up with a short list (the
-        # day-2 review). ANALYZE gives the planner the new table's statistics. VACUUM can't run in a transaction, so
-        # inside a caller's it is left to autovacuum.
-        conn.execute("VACUUM (ANALYZE) documents, chunks")
+    if (added or updated or removed or embedded) and conn.autocommit:
+        _vacuum(conn)
     return IngestReport(added, updated, unchanged, removed, written, embedded)
 
 
@@ -128,3 +125,20 @@ def _embed_missing(conn: psycopg.Connection, embedder: Embedder) -> int:
             ([row[0] for row in batch], [db.vector_literal(v) for v in vectors]),
         )
     return len(rows)
+
+
+def _vacuum(conn: psycopg.Connection) -> None:
+    """VACUUM (ANALYZE) the tables an ingest changed, after it has committed; a failure here doesn't fail the ingest.
+
+    Rows an ingest replaced or deleted stay in the HNSW index until VACUUM, and an HNSW scan visits them: past
+    hnsw.max_scan_tuples (20,000) of them near a question, an iterative scan gives up with a short list (the day-2
+    review). ANALYZE gives the planner the new table's statistics. VACUUM can't run in a transaction block, so only an
+    idle autocommit connection vacuums; otherwise, and if it fails (another session holding its lock past a
+    lock_timeout, say), the ingest is committed already and autovacuum does it later.
+    """
+    if conn.info.transaction_status != pq.TransactionStatus.IDLE:
+        return
+    try:
+        conn.execute("VACUUM (ANALYZE) documents, chunks")
+    except psycopg.Error as e:
+        warnings.warn(f"the ingest is committed, but VACUUM after it failed: {e}", stacklevel=3)
