@@ -10,6 +10,7 @@ from conftest import connect_to
 from recall import ingest as ingest_module
 from recall.chunking import chunk_document
 from recall.corpus.load import Document
+from recall.embedding import HashEmbedder
 from recall.ingest import IngestReport, ingest
 
 COMMIT = "a" * 40
@@ -22,7 +23,7 @@ DOCS = [
 
 
 def run(conn: psycopg.Connection, docs: list[Document], max_tokens: int = 16, commit: str = COMMIT) -> IngestReport:
-    return ingest(conn, docs, source_commit=commit, max_tokens=max_tokens)
+    return ingest(conn, docs, source_commit=commit, max_tokens=max_tokens, embedder=HashEmbedder())
 
 
 def stored(conn: psycopg.Connection) -> list[tuple[object, ...]]:
@@ -46,22 +47,22 @@ def chunk_ids(conn: psycopg.Connection) -> list[int]:
 
 def test_ingest_stores_every_chunk_as_a_span_of_its_document(conn: psycopg.Connection):
     report = run(conn, DOCS)
-    assert report == IngestReport(added=3, updated=0, unchanged=0, removed=0, chunks_written=len(expected(DOCS)))
+    n = len(expected(DOCS))
+    assert report == IngestReport(added=3, updated=0, unchanged=0, removed=0, chunks_written=n, chunks_embedded=n)
     assert stored(conn) == expected(DOCS)
     mismatched = conn.execute(
         "SELECT count(*) FROM chunks c JOIN documents d ON d.id = c.document_id"
         " WHERE c.content <> substr(d.content, c.start_offset + 1, c.end_offset - c.start_offset)"
     ).fetchone()
     assert mismatched == (0,)
-    assert conn.execute("SELECT source_commit, chunker_version, max_tokens FROM corpus_settings").fetchall() == [
-        (COMMIT, ingest_module.CHUNKER_VERSION, 16)
-    ]
+    settings = "SELECT source_commit, chunker_version, max_tokens, embedding_model FROM corpus_settings"
+    assert conn.execute(settings).fetchall() == [(COMMIT, ingest_module.CHUNKER_VERSION, 16, "hash-v1-384")]
 
 
 def test_ingesting_the_same_corpus_again_writes_nothing(conn: psycopg.Connection):
     run(conn, DOCS)
     ids = chunk_ids(conn)
-    assert run(conn, DOCS) == IngestReport(0, 0, 3, 0, 0)
+    assert run(conn, DOCS) == IngestReport(0, 0, 3, 0, 0, 0)
     assert chunk_ids(conn) == ids
 
 

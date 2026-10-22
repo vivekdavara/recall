@@ -11,6 +11,7 @@ from conftest import connect_to
 
 from recall import db
 from recall.corpus.load import Document
+from recall.embedding import HashEmbedder
 from recall.ingest import ingest
 
 DOCS = [Document("a.md", "A", "u/a", "# A\n\nAlpha.\n"), Document("b.md", "B", "u/b", "Beta.\n")]
@@ -51,7 +52,9 @@ def test_concurrent_ingests_queue_even_when_the_default_isolation_is_repeatable_
     REPEATABLE READ the second doesn't, and fails with SerializationFailure on the documents upsert."""
     with connect_to(schema) as c:
         db.migrate(c)
-    errors = concurrently(schema, lambda c: ingest(c, DOCS, source_commit="a" * 40, max_tokens=16))
+    errors = concurrently(
+        schema, lambda c: ingest(c, DOCS, source_commit="a" * 40, max_tokens=16, embedder=HashEmbedder())
+    )
     assert errors == []
 
 

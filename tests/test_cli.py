@@ -57,14 +57,16 @@ def test_ingest_and_migrate(
     url, _ = setup
     monkeypatch.setenv("RECALL_DATABASE_URL", f"{TEST_DATABASE_URL}?options=-csearch_path%3D{schema},public")
     assert cli.main(["migrate"]) == 0
-    assert "applied 001_documents_and_chunks" in capsys.readouterr().out
+    assert "applied 001_documents_and_chunks, 002_retrieval" in capsys.readouterr().out
     assert cli.main(["migrate"]) == 0
     assert "nothing to apply" in capsys.readouterr().out
     assert cli.main(["fetch", "--url", url]) == 0
+    assert cli.main(["ingest", "--max-tokens", "4", "--embedder", "hash"]) == 0
+    out = capsys.readouterr().out
+    assert "1 added, 0 updated, 0 unchanged, 0 removed; 3 chunks written, 3 embedded (hash-v1-384)" in out
+    monkeypatch.setenv("RECALL_EMBEDDER", "hash")
     assert cli.main(["ingest", "--max-tokens", "4"]) == 0
-    assert "1 added, 0 updated, 0 unchanged, 0 removed; 3 chunks written" in capsys.readouterr().out
-    assert cli.main(["ingest", "--max-tokens", "4"]) == 0
-    assert "0 added, 0 updated, 1 unchanged" in capsys.readouterr().out
+    assert "0 added, 0 updated, 1 unchanged, 0 removed; 0 chunks written, 0 embedded" in capsys.readouterr().out
 
 
 def test_manifest_is_built_for_the_pinned_commit(

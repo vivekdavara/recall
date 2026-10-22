@@ -15,6 +15,7 @@ from recall.corpus import fetch, source
 from recall.corpus.fetch import CorpusError
 from recall.corpus.load import load
 from recall.corpus.normalize import NormalizeError
+from recall.embedding import Embedder, HashEmbedder, ModelUnavailable
 
 
 def data_dir() -> Path:
@@ -105,17 +106,28 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def make_embedder(kind: str) -> Embedder:
+    """`model` is the pinned sentence-transformers model (the `embed` extra); `hash` the dependency-free stub."""
+    if kind == "hash":
+        return HashEmbedder()
+    from recall.embedding import SentenceTransformerEmbedder
+
+    return SentenceTransformerEmbedder()
+
+
 def cmd_ingest(args: argparse.Namespace) -> int:
     from recall.ingest import ingest
 
     manifest = fetch.load_manifest()
     documents = load(corpus_dir(), manifest)
+    embedder = make_embedder(args.embedder)
     with db.connect() as conn:
         db.migrate(conn)
-        report = ingest(conn, documents, source_commit=manifest.commit, max_tokens=args.max_tokens)
+        report = ingest(conn, documents, source_commit=manifest.commit, max_tokens=args.max_tokens, embedder=embedder)
     print(
         f"documents: {report.added} added, {report.updated} updated, {report.unchanged} unchanged,"
-        f" {report.removed} removed; {report.chunks_written} chunks written"
+        f" {report.removed} removed; {report.chunks_written} chunks written, {report.chunks_embedded} embedded"
+        f" ({embedder.name})"
     )
     return 0
 
@@ -138,6 +150,8 @@ def parser() -> argparse.ArgumentParser:
     ]:
         c = sub.add_parser(name, help=text)
         c.add_argument("--max-tokens", type=positive, default=chunking.DEFAULT_MAX_TOKENS)
+        if name == "ingest":
+            add_embedder_option(c)
         c.set_defaults(run=run)
     show = sub.add_parser("show", help="print one page's chunks, with their spans and heading paths")
     show.add_argument("page", help="a page path, e.g. tutorial/query-params.md")
@@ -145,6 +159,15 @@ def parser() -> argparse.ArgumentParser:
     show.set_defaults(run=cmd_show)
     sub.add_parser("migrate", help="apply the schema migrations").set_defaults(run=cmd_migrate)
     return p
+
+
+def add_embedder_option(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--embedder",
+        choices=["model", "hash"],
+        default=os.environ.get("RECALL_EMBEDDER", "model"),
+        help="model: the pinned sentence-transformers model (default; $RECALL_EMBEDDER overrides); hash: the stub",
+    )
 
 
 def positive(text: str) -> int:
@@ -158,7 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         code: int = args.run(args)
-    except (CorpusError, NormalizeError) as e:
+    except (CorpusError, NormalizeError, ModelUnavailable) as e:
         print(f"recall: {e}", file=sys.stderr)
         return 1
     except (psycopg.OperationalError, db.BadDatabaseURL) as e:
