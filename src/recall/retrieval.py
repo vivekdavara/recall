@@ -28,6 +28,8 @@ RRF_K = 60
 # to the list length.
 _EF_SEARCH_DEFAULT = 40
 MAX_K = 1000
+# Distinct searchable words of a question used by full-text search (see _FULL_TEXT).
+MAX_QUESTION_WORDS = 64
 
 
 @dataclass(frozen=True)
@@ -54,17 +56,25 @@ class ModelMismatch(RuntimeError):
 # identifier: response_model_exclude_unset is four lexemes, and ORing those four ranks every chunk about response
 # models above the one about that parameter; as a phrase they must be adjacent, as they are in the identifier. A
 # word that is only stop words (or punctuation) has no lexemes and is left out. The text form of a tsquery quotes
-# each lexeme, so wrapping each phrase in parentheses and joining with ' | ' can't change what a lexeme says.
+# each lexeme, so wrapping each phrase in parentheses and joining with ' | ' can't change what a lexeme says. Each
+# distinct phrase counts once, and only the first MAX_QUESTION_WORDS: ts_rank_cd allocates about 32 KB per query
+# item, so a question of 20,000 words asked PostgreSQL for 1.3 GB and failed (the day-2 review).
 _FULL_TEXT = """
 fts AS (
     SELECT id, score, row_number() OVER (ORDER BY score DESC, id) AS rank
     FROM (
         SELECT c.id, ts_rank_cd(c.search_vector, q.query, 1) AS score
         FROM chunks c, (
-            SELECT string_agg('(' || phrase::text || ')', ' | ' ORDER BY w.n)::tsquery AS query
-            FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),
-                LATERAL phraseto_tsquery('english', w.word) AS phrase
-            WHERE numnode(phrase) > 0
+            SELECT string_agg('(' || phrase::text || ')', ' | ' ORDER BY n)::tsquery AS query
+            FROM (
+                SELECT phrase, min(w.n) AS n
+                FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),
+                    LATERAL phraseto_tsquery('english', w.word) AS phrase
+                WHERE numnode(phrase) > 0
+                GROUP BY phrase
+                ORDER BY n
+                LIMIT %(max_words)s
+            ) words
         ) q
         WHERE c.search_vector @@ q.query
         ORDER BY score DESC, c.id
@@ -114,7 +124,7 @@ def full_text(conn: psycopg.Connection, question: str, k: int = DEFAULT_K) -> li
     """The k chunks whose search vectors best match any of the question's words, by ts_rank_cd."""
     _check_sizes(k, k)
     sql = f"WITH {_FULL_TEXT} SELECT {_HIT_COLUMNS}, f.score, f.rank, NULL FROM fts f {_JOIN} ORDER BY f.rank"
-    return _hits(conn, sql, {"question": question, "n": k}, ef_search=None)
+    return _hits(conn, sql, {"question": question, "n": k, "max_words": MAX_QUESTION_WORDS}, ef_search=None)
 
 
 def vector(conn: psycopg.Connection, query_vector: Sequence[float], k: int = DEFAULT_K) -> list[Hit]:
@@ -145,7 +155,14 @@ def hybrid(
         f" SELECT {_HIT_COLUMNS}, f.score, f.fts_rank, f.vec_rank FROM fused f {_JOIN}"
         " ORDER BY f.score DESC, f.id LIMIT %(k)s"
     )
-    params = {"question": question, "vector": vector_literal(query_vector), "n": candidates, "k": k, "rrf_k": rrf_k}
+    params = {
+        "question": question,
+        "vector": vector_literal(query_vector),
+        "n": candidates,
+        "k": k,
+        "rrf_k": rrf_k,
+        "max_words": MAX_QUESTION_WORDS,
+    }
     return _hits(conn, sql, params, ef_search=candidates)
 
 

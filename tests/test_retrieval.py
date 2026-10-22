@@ -230,7 +230,8 @@ def test_the_vector_query_can_use_the_hnsw_index(conn: psycopg.Connection):
 def test_the_full_text_query_can_use_the_gin_index(conn: psycopg.Connection):
     load(conn)
     sql = f"WITH {retrieval._FULL_TEXT} SELECT * FROM fts"
-    assert "chunks_search_vector_gin" in plan(conn, sql, {"question": "default values", "n": 5})
+    params = {"question": "default values", "n": 5, "max_words": retrieval.MAX_QUESTION_WORDS}
+    assert "chunks_search_vector_gin" in plan(conn, sql, params)
 
 
 def test_an_identifier_matches_as_written_not_as_its_parts(conn: psycopg.Connection):
@@ -265,3 +266,17 @@ def test_search_needs_an_autocommit_connection(conn: psycopg.Connection):
     conn.autocommit = False
     with pytest.raises(ValueError, match="autocommit"):
         search(conn, "x", HashEmbedder(), "vector", 3)
+
+
+def test_only_the_first_distinct_words_of_a_long_question_are_searched(conn: psycopg.Connection):
+    load(conn)
+    filler = " ".join(f"w{i}" for i in range(retrieval.MAX_QUESTION_WORDS))
+    # Repeats don't use up the limit; the 65th distinct word is past it.
+    assert where(full_text(conn, "pydantic " * 100 + filler)) == ["body/"]
+    assert full_text(conn, filler + " pydantic") == []
+
+
+def test_a_question_splits_at_any_whitespace(conn: psycopg.Connection):
+    load(conn)
+    assert sorted(where(full_text(conn, "pydantic\temail"))) == ["body/", "tasks/"]
+    assert sorted(where(full_text(conn, "pydantic\nemail"))) == ["body/", "tasks/"]

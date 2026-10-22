@@ -143,3 +143,28 @@ def test_search_never_compares_a_question_vector_with_another_models_vectors(sch
 
     with pytest.raises(ModelMismatch):
         search(conn, "alpha", Raced(), "vector", 3)
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        " ".join(["pydantic"] * 20000),  # one distinct word: InternalError, "invalid memory alloc request size"
+        " ".join(f"w{i}" for i in range(20000)) + " pydantic",  # likewise
+        " ".join(f"w{i}" for i in range(40000)) + " pydantic",  # StatementTooComplex, "stack depth limit exceeded"
+    ],
+    ids=["repeated-word", "distinct-words", "deeper"],
+)
+def test_a_long_question_does_not_break_full_text_search(conn: psycopg.Connection, question: str):
+    """Every whitespace-separated word becomes its own operand of one OR, duplicates included, with no limit.
+    ts_rank_cd allocates one QueryRepresentationOperand (about 32 KB) per tsquery item, so a question of 20,000
+    words (~160 KB of text, which fits in argv) asks PostgreSQL for ~1.3 GB and fails with InternalError "invalid
+    memory alloc request size"; at ~40,000 words parsing the left-deep OR exceeds max_stack_depth. Even the
+    same word repeated fails. Correct: any question returns hits (e.g. OR each distinct word once, and cap the
+    number of words), as test_no_question_breaks_full_text_search claims for short ones."""
+    from test_retrieval import load
+
+    load(conn)
+    hits = full_text(conn, question)
+    # (Adjusted with the fix: only the first 64 distinct words are searched, so after 20,000 others "pydantic" is
+    # past the limit and nothing matches; the point is that the search runs.)
+    assert [h.path for h in hits] == (["body.md"] if question.startswith("pydantic") else [])
