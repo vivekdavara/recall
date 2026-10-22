@@ -13,6 +13,8 @@ requires-python = ">=3.11"
 dependencies = ["psycopg[binary]>=3.2"]
 
 [project.optional-dependencies]
+# The real embedding model (day 2); without it, ingest and search can use the hash embedder.
+embed = ["sentence-transformers>=6.2"]
 dev = ["pytest>=8", "pytest-cov>=5", "hypothesis>=6.100", "ruff==0.17.1", "mypy>=1.10"]
 
 [project.scripts]
@@ -27,6 +29,7 @@ recall = ["py.typed", "migrations/*.sql", "corpus/manifest.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["model: needs sentence-transformers and the embedding model (skipped without them)"]
 
 [tool.coverage.run]
 source = ["recall"]
@@ -45,3 +48,8 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 files = ["src"]
+
+[[tool.mypy.overrides]]
+# Imported only inside SentenceTransformerEmbedder; the CI test job runs mypy without the embed extra.
+module = ["sentence_transformers", "sentence_transformers.*"]
+ignore_missing_imports = true
