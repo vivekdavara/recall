@@ -107,3 +107,42 @@ def test_real_model_ranks_the_passage_about_the_question_first(model) -> None:  
 def test_real_model_counts_its_own_tokens(model) -> None:  # type: ignore[no-untyped-def]
     # [CLS] and [SEP] around the word pieces.
     assert model.count_tokens("hello") == 3
+
+
+@pytest.mark.model
+def test_real_model_names_its_pinned_revision_and_reads_512_tokens(model) -> None:  # type: ignore[no-untyped-def]
+    assert model.name == DEFAULT_MODEL.name
+    assert model.dimension == DIMENSION
+    assert model._model.max_seq_length == DEFAULT_MODEL.max_seq_length == 512
+
+
+@pytest.mark.model
+def test_real_queries_get_the_prefix_and_passages_dont(model) -> None:  # type: ignore[no-untyped-def]
+    q = "how do I declare a query parameter?"
+    with_prefix = model.embed_passages([DEFAULT_MODEL.query_prefix + q])[0]
+    assert model.embed_query(q) == pytest.approx(with_prefix, abs=1e-6)
+    assert dot(model.embed_query(q), model.embed_passages([q])[0]) < 0.999
+
+
+@pytest.mark.model
+def test_a_model_spec_of_the_wrong_dimension_is_refused(model) -> None:  # type: ignore[no-untyped-def]
+    from dataclasses import replace
+
+    from recall.embedding import ModelUnavailable, SentenceTransformerEmbedder
+
+    with pytest.raises(ModelUnavailable, match="gives 384 dimensions, not 512"):
+        SentenceTransformerEmbedder(replace(DEFAULT_MODEL, dimension=512))
+
+
+@pytest.mark.model
+def test_the_specs_input_length_is_the_models(model) -> None:  # type: ignore[no-untyped-def]
+    from dataclasses import replace
+
+    from recall.embedding import SentenceTransformerEmbedder
+
+    # bge-small's own default is 512 too, so only another value shows the spec is applied.
+    short = SentenceTransformerEmbedder(replace(DEFAULT_MODEL, max_seq_length=16))
+    long_text = "query parameters " * 100
+    assert short._model.max_seq_length == 16
+    truncated, prefix = short.embed_passages([long_text, long_text[:200]])
+    assert truncated == pytest.approx(prefix, abs=1e-6)
