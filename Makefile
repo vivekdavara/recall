@@ -13,8 +13,9 @@ lint:
 	$(PY) -m ruff format --check .
 	$(PY) -m mypy
 
+# The app's database is a database no test may use: a test that forgets RECALL_DATABASE_URL fails here as it does in CI.
 test:
-	$(PY) -m pytest
+	RECALL_DATABASE_URL=postgresql://localhost:5544/no_tests_here $(PY) -m pytest
 
 # The tests that need PostgreSQL use RECALL_TEST_DATABASE_URL; `make db-start` runs the local cluster it points at.
 check: lint test

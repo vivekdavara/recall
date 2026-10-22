@@ -218,9 +218,25 @@ def test_search_with_vectors_of_another_model_fails_cleanly(
 
 
 def test_the_model_embedder_without_sentence_transformers_fails_cleanly(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    schema: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
     import builtins
+
+    from conftest import connect_to
+
+    from recall import db
+    from recall.embedding import DEFAULT_MODEL
+
+    # search checks the stored model before loading one, so the database's vectors must be the default model's (this
+    # test passed here only by reaching the developer's own recall database until it had one of its own).
+    monkeypatch.setenv("RECALL_DATABASE_URL", f"{TEST_DATABASE_URL}?options=-csearch_path%3D{schema},public")
+    with connect_to(schema) as c:
+        db.migrate(c)
+        c.execute(
+            "INSERT INTO corpus_settings (source_commit, chunker_version, max_tokens, embedding_model)"
+            " VALUES (%s, 1, 1, %s)",
+            ("a" * 40, DEFAULT_MODEL.name),
+        )
 
     real_import = builtins.__import__
 
