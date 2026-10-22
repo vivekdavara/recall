@@ -13,7 +13,7 @@ likely to ask.
 | Day | What | State |
 |---|---|---|
 | 1 | Design; the corpus (fetched, checked, normalized); chunking; the schema and ingest; the local database; CI | done |
-| 2 | Local embeddings in pgvector (HNSW), full-text retrieval, hybrid by reciprocal rank fusion | planned |
+| 2 | Local embeddings in pgvector (HNSW), full-text retrieval, hybrid by reciprocal rank fusion, `recall search` | done |
 | 3 | Answers with citations (recorded LLM provider, extractive fallback), a cross-encoder reranker, the API | planned |
 | 4 | The eval harness: labelled questions with gold passages, recall@k, MRR, faithfulness; a CI gate | planned |
 | 5 | The ablation table, results, v1.0.0 | planned |
@@ -37,8 +37,9 @@ flowchart LR
     B -->|normalize| C[125 pages of<br/>plain Markdown]
     C -->|chunk| D[1,503 chunks<br/>with spans]
     D -->|recall ingest| E[(PostgreSQL 17<br/>documents, chunks)]
-    E -.->|day 2| F[pgvector HNSW +<br/>full-text GIN]
-    F -.->|days 2-3| G[hybrid retrieval, rerank,<br/>answer with citations]
+    E -->|embed: bge-small on CPU;<br/>generated tsvector| F[pgvector HNSW +<br/>full-text GIN]
+    F -->|recall search| R[full-text, vector,<br/>hybrid by RRF]
+    R -.->|day 3| G[rerank, answer<br/>with citations]
     G -.->|day 4| H[eval harness<br/>recall@k, MRR]
 ```
 
@@ -53,11 +54,15 @@ src/recall/
   corpus/manifest.json    the 421 files used, with sizes and SHA-256
   corpus/normalize.py     FastAPI's Markdown extensions to plain Markdown
   corpus/load.py          an extracted corpus to Documents
-  ingest.py               documents and chunks into PostgreSQL, idempotent, one transaction
-  db.py                   connections and migrations
+  ingest.py               documents, chunks and their vectors into PostgreSQL, idempotent, one transaction
+  embedding.py            the Embedder interface, bge-small-en-v1.5 (pinned), a hash stub for tests
+  retrieval.py            full-text, vector, and hybrid (reciprocal rank fusion) retrieval, each one SQL query
+  db.py                   connections, migrations, pgvector's text form
   migrations/             numbered SQL files
   cli.py                  the recall command
 scripts/pg.sh             the project-local PostgreSQL 17 cluster (port 5544)
+scripts/token_fit.py      the chunks counted in the embedding model's own tokens
+scripts/measure_retrieval.py   HNSW against exact search, and each step's latency
 tests/                    unit, property (Hypothesis), database and real-corpus tests
 ```
 
@@ -72,13 +77,18 @@ scripts/pg.sh start            # the local cluster on port 5544: databases recal
 .venv/bin/recall verify        # check data/corpus against the manifest
 .venv/bin/recall stats         # chunk the corpus and print its sizes
 .venv/bin/recall show tutorial/query-params.md   # one page's chunks, with spans and heading paths
-.venv/bin/recall ingest        # load it into the recall database (runs the migrations first)
+.venv/bin/pip install -e '.[embed]'   # PyTorch and sentence-transformers, for the embedding model
+.venv/bin/recall ingest        # load and embed it into the recall database (runs the migrations; ~40 s on a laptop CPU)
+.venv/bin/recall search "how do I give a query parameter a default value?"   # hybrid; --mode full-text | vector
 make check                     # ruff, mypy --strict, and the tests (they use recall_test)
 scripts/pg.sh stop
 ```
 
 `recall ingest --max-tokens N` and `recall stats --max-tokens N` chunk with another size; ingest then re-chunks every
-document. Settings: `RECALL_DATABASE_URL` (default `postgresql://localhost:5544/recall`), `RECALL_TEST_DATABASE_URL`
+document. `--embedder hash` (or `RECALL_EMBEDDER=hash`) uses the dependency-free stub instead of the model, for trying
+the pipeline without PyTorch; ingest with another embedder embeds every chunk again, and search refuses vectors made by
+another embedder than its own. The first use of the model downloads it (133 MB) from Hugging Face, at a pinned
+revision. Settings: `RECALL_DATABASE_URL` (default `postgresql://localhost:5544/recall`), `RECALL_TEST_DATABASE_URL`
 (default `.../recall_test`), `RECALL_DATA_DIR` (default `data`).
 
 ## Results (day 1)
@@ -180,17 +190,35 @@ DESIGN.md said; the documentation build inserts it as Markdown, so Recall now do
 - **Chunks of whole blocks, no overlap.** Cuts fall between paragraphs and code blocks; each chunk carries its page
   title and heading path for context instead of repeating its neighbour's text.
 - **A token measure of word runs and single punctuation.** Closer to word pieces than words, and exactly additive, so
-  the size bound is exact. Day 2 checks it against the embedding model's own tokenizer.
+  the size bound is exact. Against the embedding model's own tokenizer (day 2): 1.29 model tokens per Recall token at
+  the median, and 1 of 1,503 passages over the model's 512.
 - **One transaction for the whole ingest.** 1,503 chunks take well under a second, and readers never see a mix of
   two corpora; the cost is a long transaction for a much bigger corpus.
 - **The builtin C.UTF-8 collation** locally and in CI, so text sorts by code point in both places.
+- **bge-small-en-v1.5, pinned by revision** (day 2). 384 dimensions, 33.4M parameters, fast on a CPU; it reads 512
+  tokens where all-MiniLM-L6-v2 reads 256, which would truncate a quarter of the passages (measured). The vectors are
+  stored with the model's name, so two models' vectors never mix.
+- **Heading path above the chunk text in what is embedded.** A chunk often doesn't name its subject; the path does.
+- **Full-text as an OR of per-word phrases.** AND (plainto_tsquery) needs every word in one chunk; a phrase per word
+  keeps identifiers like `response_model_exclude_unset` whole, which the parser splits.
+- **Reciprocal rank fusion, in one SQL query.** Ranks need no calibration between ts_rank_cd and cosine similarity; one
+  query is one snapshot and one round trip. k = 60 and 50 candidates a list are the usual defaults; day 4 measures them.
+- **A hash embedder for tests.** Deterministic and dependency-free, so database and retrieval tests predict rankings
+  exactly and CI's main job needs no PyTorch; the real model has its own CI job.
 
 ## Limitations
 
 - The Markdown scanner is not CommonMark: fences may be indented any amount (FastAPI indents fences in lists),
   setext headings are not headings, and HTML-like text outside code spans (`List<int>`) is stripped as a tag.
 - Normalization is written for FastAPI's documentation build; another corpus needs its own rules.
-- The token measure approximates the embedding model's tokens; a code-heavy chunk can have more model tokens.
+- The token measure approximates the embedding model's tokens; a code-heavy chunk can have more model tokens. One
+  passage (a base64 PNG in a code block) is truncated by the model.
+- Full-text ranking is ts_rank_cd, which has no inverse document frequency: a question in common words ("run a function
+  after returning the response") can miss its page. Day 4 measures IDF weighting against it.
+- HNSW is approximate; `scripts/measure_retrieval.py` measures how far from exact it is here.
+- Reciprocal rank fusion favours chunks both retrievers rank moderately over one that only one ranks high.
+- `recall search` loads the model for every command (seconds); day 3's API keeps it loaded.
+- Ingest embeds inside its one transaction: a first ingest holds it for about 40 s on a laptop CPU.
 - The local cluster uses trust authentication on localhost; it is for development only.
 - `<!-- c --># Title` is a heading after normalization (CommonMark would make the whole line an HTML block), and
   front matter is any `---` block at the start, without checking it is YAML.
