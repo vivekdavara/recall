@@ -133,7 +133,7 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e '.[dev,embed]'
       - name: Cache the model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/huggingface
           key: hf-${{ hashFiles('src/recall/embedding.py') }}
