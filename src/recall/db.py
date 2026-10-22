@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from importlib import resources
 from importlib.resources.abc import Traversable
 
@@ -71,6 +72,11 @@ def lock_read_committed(conn: psycopg.Connection, key: int) -> None:
     """
     conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (key,))
+
+
+def vector_literal(vector: Sequence[float]) -> str:
+    """pgvector's text form, '[x,y,...]'. repr keeps every digit, so nothing is lost before PostgreSQL's float4."""
+    return "[" + ",".join(repr(float(x)) for x in vector) + "]"
 
 
 def migrations(directory: Traversable | None = None) -> list[tuple[str, str]]:

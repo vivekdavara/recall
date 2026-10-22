@@ -105,11 +105,6 @@ def ingest(
     return IngestReport(added, updated, unchanged, removed, written, embedded)
 
 
-def vector_literal(vector: Sequence[float]) -> str:
-    """pgvector's text form, '[x,y,...]'. repr keeps every digit, so nothing is lost before PostgreSQL's float4."""
-    return "[" + ",".join(repr(float(x)) for x in vector) + "]"
-
-
 def _embed_missing(conn: psycopg.Connection, embedder: Embedder) -> int:
     """Embed every chunk that has no vector, in id order; return how many."""
     if embedder.dimension != DIMENSION:
@@ -123,6 +118,6 @@ def _embed_missing(conn: psycopg.Connection, embedder: Embedder) -> int:
         conn.execute(
             "UPDATE chunks SET embedding = v.embedding::vector FROM unnest(%s::bigint[], %s::text[]) AS"
             " v(id, embedding) WHERE chunks.id = v.id",
-            ([row[0] for row in batch], [vector_literal(v) for v in vectors]),
+            ([row[0] for row in batch], [db.vector_literal(v) for v in vectors]),
         )
     return len(rows)

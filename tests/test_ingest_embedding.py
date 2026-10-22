@@ -13,8 +13,9 @@ from test_ingest import COMMIT, DOCS, chunk_ids
 from recall import db
 from recall import ingest as ingest_module
 from recall.corpus.load import Document
+from recall.db import vector_literal
 from recall.embedding import HashEmbedder, passage_text
-from recall.ingest import ingest, vector_literal
+from recall.ingest import ingest
 
 
 def run(conn: psycopg.Connection, docs: Sequence[Document], embedder: object = None, max_tokens: int = 16):  # type: ignore[no-untyped-def]
