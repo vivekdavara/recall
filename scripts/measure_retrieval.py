@@ -9,7 +9,7 @@ seed. Each title is also in the text embedded for its own section's chunks, so t
 timing and for comparing HNSW with exact search, not a measure of answer quality (day 4's labelled set is).
 
 1. HNSW against exact: for each question, the vector top k through the HNSW index at several hnsw.ef_search values
-   (retrieval.vector uses max(k, 40); 40 is pgvector's default) and by a sequential scan (index scans off, so every
+   (retrieval uses max(k, 100); pgvector's default is 40) and by a sequential scan (index scans off, so every
    distance is computed; the plans are checked); recall@k is the share of the exact top k that HNSW returned.
 2. Latency: embedding the question, each retriever's query, and hybrid end to end (embed + query), each over every
    question after an untimed warm-up of the first `--warmup` questions, as nearest-rank percentiles.
