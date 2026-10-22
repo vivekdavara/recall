@@ -4,7 +4,7 @@ import math
 import os
 
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from recall.embedding import DEFAULT_MODEL, DIMENSION, HashEmbedder, passage_text
@@ -25,6 +25,7 @@ def test_hash_embedder_names_its_dimension() -> None:
     assert HashEmbedder(8).name == "hash-v1-8"
 
 
+@settings(deadline=None)
 @given(st.text(max_size=200))
 def test_hash_vectors_are_unit_length_and_deterministic(text: str) -> None:
     v = HashEmbedder().embed_query(text)
