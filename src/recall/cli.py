@@ -144,29 +144,23 @@ def cmd_search(args: argparse.Namespace) -> int:
         # Python reads undecodable argv bytes as lone surrogates (e.g. Latin-1 from a file), which psycopg can't send.
         print("recall: the question isn't valid UTF-8", file=sys.stderr)
         return 1
-    with db.connect() as conn:
-        try:
-            embedder = None
-            if args.mode != "full-text":
-                # Check the stored vectors' model before loading one (it takes seconds); search checks again, with
-                # the query, in one snapshot. Full-text search needs no model.
-                wanted = HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name
-                stored = retrieval.stored_model(conn)
-                if stored is None:
-                    raise retrieval.ModelMismatch("no embedded corpus: run recall ingest")
-                if stored != wanted:
-                    raise retrieval.ModelMismatch(
-                        f"the stored vectors are from {stored}, not {wanted}: search with --embedder for that model,"
-                        " or ingest again"
-                    )
-                embedder = make_embedder(args.embedder)
+    try:
+        embedder = None
+        if args.mode != "full-text":
+            # Check the stored vectors' model before loading one (seconds, or a download), on a connection closed
+            # before the load, so no connection sits idle through it (a server's idle timeout would end it). search
+            # checks again, with the query, in one snapshot. Full-text search needs no model.
+            with db.connect() as conn:
+                retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
+            embedder = make_embedder(args.embedder)
+        with db.connect() as conn:
             hits = retrieval.search(conn, args.question, embedder, args.mode, args.k, candidates=args.candidates)
-        except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
-            # Search doesn't migrate: nothing ingested yet, or a database from an older version (ingest migrates it).
-            # Only here is that the likely cause; elsewhere such an error is a bug and keeps its traceback.
-            url = db.describe_url(db.database_url())
-            print(f"recall: the database {url} has no corpus or an older schema: run recall ingest", file=sys.stderr)
-            return 1
+    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+        # Search doesn't migrate: nothing ingested yet, or a database from an older version (ingest migrates it).
+        # Only here is that the likely cause; elsewhere such an error is a bug and keeps its traceback.
+        url = db.describe_url(db.database_url())
+        print(f"recall: the database {url} has no corpus or an older schema: run recall ingest", file=sys.stderr)
+        return 1
     if not hits:
         print("no results")
     for i, h in enumerate(hits, 1):

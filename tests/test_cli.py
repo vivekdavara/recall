@@ -211,9 +211,9 @@ def test_search_with_vectors_of_another_model_fails_cleanly(
     monkeypatch.setattr(cli, "make_embedder", lambda kind: Other())
     assert cli.main(["search", "x", "--embedder", "hash"]) == 1
     err = capsys.readouterr().err
-    assert (
-        err
-        == "recall: the stored vectors are from hash-v1-384, not other: search with that embedder, or ingest again\n"
+    assert err == (
+        "recall: the stored vectors are from hash-v1-384, not other: search with the embedder that made them, or"
+        " ingest again with this one\n"
     )
 
 
@@ -269,4 +269,4 @@ def test_search_refuses_another_models_vectors_before_loading_a_model(
     assert cli.main(["search", "x", "--embedder", "model"]) == 1
     err = capsys.readouterr().err
     assert err.startswith("recall: the stored vectors are from hash-v1-384, not BAAI/bge-small-en-v1.5@")
-    assert "search with --embedder for that model, or ingest again" in err
+    assert "search with the embedder that made them, or ingest again with this one" in err

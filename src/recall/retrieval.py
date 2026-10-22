@@ -127,12 +127,18 @@ def stored_model(conn: psycopg.Connection) -> str | None:
 
 
 def check_model(conn: psycopg.Connection, embedder: Embedder) -> None:
+    check_model_name(conn, embedder.name)
+
+
+def check_model_name(conn: psycopg.Connection, name: str) -> None:
+    """Raise ModelMismatch unless the stored vectors were made by the model `name`."""
     stored = stored_model(conn)
     if stored is None:
         raise ModelMismatch("no embedded corpus: run recall ingest")
-    if stored != embedder.name:
+    if stored != name:
         raise ModelMismatch(
-            f"the stored vectors are from {stored}, not {embedder.name}: search with that embedder, or ingest again"
+            f"the stored vectors are from {stored}, not {name}: search with the embedder that made them, or ingest"
+            " again with this one"
         )
 
 
