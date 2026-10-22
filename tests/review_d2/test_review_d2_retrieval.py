@@ -13,7 +13,7 @@ from test_retrieval import many_documents
 
 from recall.embedding import HashEmbedder
 from recall.ingest import ingest
-from recall.retrieval import full_text, hybrid, vector
+from recall.retrieval import ModelMismatch, full_text, hybrid, search, vector
 
 
 class Revised(HashEmbedder):
@@ -123,3 +123,23 @@ def test_vector_with_k_over_1000_in_a_fresh_session_is_not_silently_cut_to_40(sc
         except ValueError:
             return
     assert len(hits) == 1001
+
+
+def test_search_never_compares_a_question_vector_with_another_models_vectors(schema: str, conn: psycopg.Connection):
+    """search() calls check_model (one statement, its own snapshot), then embeds the question, then runs the query in
+    a new transaction. An ingest with another model that commits in between (embedding a question with the real
+    model takes tens of milliseconds) is not seen by the check but is seen by the query: the hash embedder's question
+    vector is ranked against the other model's vectors, the mix the check exists to refuse. Correct: the model
+    check and the retrieval read one snapshot (e.g. the check inside the query, or both in one REPEATABLE READ
+    transaction), so this raises ModelMismatch (or returns hits from vectors of the question's model)."""
+    docs = many_documents(10)
+    ingest(conn, docs, source_commit=COMMIT, max_tokens=64, embedder=HashEmbedder())
+
+    class Raced(HashEmbedder):
+        def embed_query(self, text: str) -> list[float]:
+            with connect_to(schema) as other:
+                ingest(other, docs, source_commit=COMMIT, max_tokens=64, embedder=Revised())
+            return super().embed_query(text)
+
+    with pytest.raises(ModelMismatch):
+        search(conn, "alpha", Raced(), "vector", 3)

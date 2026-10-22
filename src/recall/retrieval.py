@@ -158,16 +158,25 @@ def search(
     *,
     candidates: int = DEFAULT_CANDIDATES,
 ) -> list[Hit]:
-    """Retrieve with one mode, embedding the question when the mode needs it."""
+    """Retrieve with one mode, embedding the question when the mode needs it. Needs an autocommit connection
+    (recall.db.connect makes one): the model check and the query run in one transaction of their own."""
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {', '.join(MODES)}, not {mode!r}")
     if mode == "full-text":
         return full_text(conn, question, k)
     if embedder is None:
         raise ValueError(f"{mode} retrieval needs an embedder")
-    check_model(conn, embedder)
+    if not conn.autocommit:
+        raise ValueError("search needs an autocommit connection (recall.db.connect makes one)")
     query_vector = embedder.embed_query(question)
-    if mode == "vector":
-        return vector(conn, query_vector, k)
-    return hybrid(conn, question, query_vector, k, candidates=candidates)
+    # One snapshot for the check and the query: in two, an ingest with another model committing between them would
+    # pair this question's vector with that model's vectors, the mix the check exists to refuse.
+    with conn.transaction():
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        check_model(conn, embedder)
+        if mode == "vector":
+            return vector(conn, query_vector, k)
+        return hybrid(conn, question, query_vector, k, candidates=candidates)
 
 
 _JOIN = "JOIN chunks c ON c.id = f.id JOIN documents d ON d.id = c.document_id"

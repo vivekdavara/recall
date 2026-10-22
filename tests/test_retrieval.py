@@ -252,3 +252,16 @@ def test_an_identifier_matches_as_written_not_as_its_parts(conn: psycopg.Connect
     assert where(full_text(conn, "the response_model_exclude_unset parameter")) == ["id/"]
     # Separate words still match separately.
     assert where(full_text(conn, "response model exclude unset")) == ["parts/", "id/"]
+
+
+def test_an_unknown_mode_is_refused_not_run_as_hybrid(conn: psycopg.Connection):
+    load(conn)
+    with pytest.raises(ValueError, match="mode must be one of full-text, vector, hybrid, not 'fulltext'"):
+        search(conn, "x", HashEmbedder(), "fulltext", 3)  # type: ignore[arg-type]
+
+
+def test_search_needs_an_autocommit_connection(conn: psycopg.Connection):
+    load(conn)
+    conn.autocommit = False
+    with pytest.raises(ValueError, match="autocommit"):
+        search(conn, "x", HashEmbedder(), "vector", 3)
