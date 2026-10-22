@@ -231,3 +231,11 @@ def test_the_model_embedder_without_sentence_transformers_fails_cleanly(
     monkeypatch.setattr(builtins, "__import__", no_model)
     assert cli.main(["search", "x", "--embedder", "model"]) == 1
     assert "needs sentence-transformers: pip install -e '.[embed]'" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("option", ["-k", "--candidates"])
+def test_search_refuses_lists_longer_than_pgvector_can_search(option: str, capsys: pytest.CaptureFixture[str]):
+    with pytest.raises(SystemExit) as e:
+        cli.main(["search", "x", option, "1001"])
+    assert e.value.code == 2
+    assert "must be at most 1000, not 1001" in capsys.readouterr().err

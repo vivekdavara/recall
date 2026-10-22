@@ -177,10 +177,10 @@ def parser() -> argparse.ArgumentParser:
     q = sub.add_parser("search", help="retrieve the chunks that best match a question")
     q.add_argument("question")
     q.add_argument("--mode", choices=retrieval.MODES, default="hybrid")
-    q.add_argument("-k", type=positive, default=retrieval.DEFAULT_K, help="how many chunks (default %(default)s)")
+    q.add_argument("-k", type=list_length, default=retrieval.DEFAULT_K, help="how many chunks (default %(default)s)")
     q.add_argument(
         "--candidates",
-        type=positive,
+        type=list_length,
         default=retrieval.DEFAULT_CANDIDATES,
         help="hybrid: how many chunks each retriever hands to the fusion (default %(default)s)",
     )
@@ -197,6 +197,13 @@ def add_embedder_option(p: argparse.ArgumentParser) -> None:
         default=os.environ.get("RECALL_EMBEDDER", "model"),
         help="model: the pinned sentence-transformers model (default; $RECALL_EMBEDDER overrides); hash: the stub",
     )
+
+
+def list_length(text: str) -> int:
+    value = positive(text)
+    if value > retrieval.MAX_K:
+        raise argparse.ArgumentTypeError(f"must be at most {retrieval.MAX_K}, not {value}")
+    return value
 
 
 def positive(text: str) -> int:

@@ -259,9 +259,13 @@ counts how often and how close together the words occur but has no inverse docum
 misses its page); day 4 measures BM25-style IDF weighting against it on the labelled set.
 
 **Vector.** `ORDER BY embedding <=> question LIMIT n` through the HNSW index, with row numbers taken outside that
-subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan returns at most
-`hnsw.ef_search` rows (pgvector's default 40), so each query raises it to the list length for its own transaction;
-before that, a list of 50 came back with 40.
+subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan picks at most
+`hnsw.ef_search` index entries (pgvector's default 40), so each query raises it to the list length for its own
+transaction (before that, a list of 50 came back with 40); lists are at most 1,000 long, pgvector's largest
+ef_search. That alone wasn't enough: the scan picks its entries before dropping dead ones, and the index keeps the
+entries of rows an ingest updated or deleted until VACUUM, so after a model change a list of 60 came back with 31
+(found by the day-2 review). Each query also turns on pgvector's iterative scan (`hnsw.iterative_scan =
+strict_order`), which keeps searching until the LIMIT is met, in distance order.
 
 **Hybrid.** Both retrievers' top `candidates` (default 50) as two CTEs of one query, fused by reciprocal rank fusion
 (Cormack, Clarke and Buettcher, 2009): score = the sum, over the lists a chunk is in, of 1 / (60 + rank). One query

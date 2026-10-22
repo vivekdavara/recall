@@ -24,8 +24,10 @@ DEFAULT_K = 10
 DEFAULT_CANDIDATES = 50
 # The k in 1 / (k + rank), as in Cormack, Clarke and Buettcher (2009): large enough that rank 1 doesn't dominate.
 RRF_K = 60
-# pgvector's default hnsw.ef_search; an HNSW scan returns at most ef_search rows, so it is raised to the list length.
+# pgvector's default hnsw.ef_search, and its largest. A list is at most MAX_K long, so ef_search can always be raised
+# to the list length.
 _EF_SEARCH_DEFAULT = 40
+MAX_K = 1000
 
 
 @dataclass(frozen=True)
@@ -172,16 +174,19 @@ _JOIN = "JOIN chunks c ON c.id = f.id JOIN documents d ON d.id = c.document_id"
 
 
 def _check_sizes(k: int, candidates: int) -> None:
-    if k < 1 or candidates < 1:
-        raise ValueError(f"k and candidates must be at least 1, not {k} and {candidates}")
+    if not (1 <= k <= MAX_K and 1 <= candidates <= MAX_K):
+        raise ValueError(f"k and candidates must be from 1 to {MAX_K}, not {k} and {candidates}")
 
 
 def _hits(conn: psycopg.Connection, sql: str, params: dict[str, Any], *, ef_search: int | None) -> list[Hit]:
     with conn.transaction():
         if ef_search is not None:
-            # Local to this transaction. An HNSW scan returns at most ef_search rows: below the list length, the
-            # vector list would come back short.
+            # Both local to this transaction. An HNSW scan picks its ef_search nearest index entries and only then
+            # drops the dead ones (rows an ingest updated or deleted stay in the index until VACUUM), so even with
+            # ef_search at the list length the list came back short after an ingest that rewrote chunks: 31 of 60
+            # after a model change. An iterative scan keeps searching until the LIMIT is met, in distance order.
             conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(ef_search, _EF_SEARCH_DEFAULT)),))
+            conn.execute("SELECT set_config('hnsw.iterative_scan', 'strict_order', true)")
         rows = conn.execute(sql.encode(), params).fetchall()
     return [
         Hit(
