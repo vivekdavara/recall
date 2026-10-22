@@ -141,10 +141,24 @@ the real-corpus tests and the cluster script's tests skip (220 passed, 9 skipped
   visible word, have no build syntax, tags or comments left outside code, and normalize idempotently.
 - **The local cluster** (`tests/test_pg_script.py`): `scripts/pg.sh` start, status, url, psql, stop, a restart that
   keeps the data, and reset (which leaves a directory that isn't a cluster alone), on a throwaway cluster.
+- **Embeddings and ingest's embedding step** (day 2, `tests/test_embedding.py`, `tests/test_ingest_embedding.py`): the
+  hash embedder's properties; stored vectors equal to a fresh embedding of each passage; only new chunks embedded; a new
+  model re-embedding everything with chunk ids kept; a model failing part way, of the wrong dimension, returning too
+  few vectors or a NaN, each rolling back; a day-1 database migrated in place; the search vector's lexemes and weights.
+- **Retrieval** (`tests/test_retrieval.py`): each retriever on corpora whose rankings the hash embedder makes
+  predictable; hybrid against a Python fusion of the two lists (Hypothesis over questions, k, candidates, RRF k);
+  identifiers matched as written; questions holding tsquery syntax or nothing searchable; k past pgvector's default
+  ef_search; `EXPLAIN` showing both indexes usable. Six mechanisms (the ef_search raise, OR, the rank in one RRF term,
+  the tie order, the weights, the per-word phrases) were each removed once, and a test failed every time.
+- **The real model** (`-m model`): the pinned name, 384-wide unit vectors, the query prefix, the input length, three
+  obvious rankings; `tests/test_real_retrieval.py` ingests the real corpus with it and searches six hand-written
+  questions in every mode (a smoke test). They skip without the `embed` extra, except in CI's model job.
 
-CI (GitHub Actions) has three jobs: lint, types and tests against a `pgvector/pgvector:pg17` service container; the
-corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests; and the
-pg-script job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test.
+CI (GitHub Actions) has four jobs: lint, types and tests against a `pgvector/pgvector:pg17` service container; the
+corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests; the pg-script
+job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test; and the model job, which
+installs CPU-only PyTorch, caches the model, and runs the `model` tests on the real corpus, writing the token fit and
+the smoke questions' ranks to the run's summary.
 
 ## Review of day 1
 
