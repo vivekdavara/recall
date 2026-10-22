@@ -261,8 +261,9 @@ misses its page); day 4 measures BM25-style IDF weighting against it on the labe
 **Vector.** `ORDER BY embedding <=> question LIMIT n` through the HNSW index, with row numbers taken outside that
 subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan picks at most
 `hnsw.ef_search` index entries (pgvector's default 40), so each query raises it to the list length for its own
-transaction (before that, a list of 50 came back with 40); lists are at most 1,000 long, pgvector's largest
-ef_search. That alone wasn't enough: the scan picks its entries before dropping dead ones, and the index keeps the
+transaction, and to 100 at least (before that, a list of 50 came back with 40); lists are at most 1,000 long,
+pgvector's largest ef_search. The floor of 100 is measured: against an exact scan, 300 questions' top 10 had 0.9893
+of the exact chunks at 40 and all of them at 100, for about 1.6 ms more a query (`scripts/measure_retrieval.py`). That alone wasn't enough: the scan picks its entries before dropping dead ones, and the index keeps the
 entries of rows an ingest updated or deleted until VACUUM, so after a model change a list of 60 came back with 31
 (found by the day-2 review). Each query also turns on pgvector's iterative scan (`hnsw.iterative_scan =
 strict_order`), which keeps searching until the LIMIT is met, in distance order.

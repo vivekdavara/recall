@@ -119,6 +119,52 @@ then 125 unchanged. After chunker version 2 (and the one-pass normalizer, which 
 updated, 1,503 chunks written, then 125 unchanged. Every stored chunk equals `substr(document.content, start + 1, end - start)` (checked in SQL, and by
 `test_ingest.py`).
 
+## Results (day 2)
+
+Apple M3, macOS 26.6.2, Python 3.11.12, PostgreSQL 17.11 + pgvector 0.8.7; on battery (Low Power Mode off).
+
+**Token fit** (`.venv/bin/python scripts/token_fit.py`; the same in CI's model job): the 1,503 passages (heading path +
+chunk) are min 13, p50 187, p95 339, p99 422 and max 723 model tokens, 1.29 model tokens per Recall token at the median;
+1 is over bge-small's 512 (a base64 PNG). all-MiniLM-L6-v2's 256 would truncate 369 (24.6%).
+
+**Ingest** (`/usr/bin/time -p .venv/bin/recall ingest`, the day-1 database migrated in place): 125 documents unchanged,
+1,503 chunks embedded, 38.9 s wall.
+
+**HNSW against exact search** (`.venv/bin/python scripts/measure_retrieval.py` at `47dc914`; 300 synthetic questions,
+the corpus's section titles, which are easy: each is in its own section's embedded text):
+
+| hnsw.ef_search | share of the exact top 10 returned | questions with all 10 |
+|---|---|---|
+| 10 | 0.9447 | 226 of 300 |
+| 20 | 0.9687 | 250 of 300 |
+| 40 (pgvector's default) | 0.9893 | 277 of 300 |
+| 100 (Recall's floor since `83fbda8`) | 1.0000 | 300 of 300 |
+
+**Latency** (the same script and questions, after 30 untimed; ms):
+
+| step | p50 | p95 | p99 | max |
+|---|---|---|---|---|
+| embed the question (bge-small, CPU) | 5.22 | 5.45 | 5.56 | 6.53 |
+| full-text query | 0.78 | 2.25 | 2.86 | 3.65 |
+| vector query (ef_search 100) | 2.43 | 2.46 | 2.50 | 2.51 |
+| hybrid query (50 candidates a list) | 3.10 | 4.54 | 5.43 | 6.22 |
+| hybrid end to end (embed + query) | 9.18 | 10.73 | 11.77 | 12.23 |
+
+At ef_search 40 the vector query was 0.84 ms at p50 and hybrid end to end 7.41 ms (the run at `47dc914`). `recall
+search` as a command takes about 5 s, nearly all of it loading the model.
+
+**Smoke questions** (`tests/test_real_retrieval.py`, six hand-written questions, not an evaluation; rank of the page in
+each mode's top 10, the same here and in CI):
+
+| question | page | full-text | vector | hybrid |
+|---|---|---|---|---|
+| Allow a frontend on another origin to call my API | tutorial/cors.md | 1 | 1 | 2 |
+| response_model_exclude_unset | tutorial/response-model.md | 1 | 1 | 1 |
+| How do I upload a file? | tutorial/request-files.md | 1 | 1 | 1 |
+| How do I declare a query parameter with a default value? | tutorial/query-params.md | 7 | 3 | 4 |
+| How can I run a function after returning the response? | tutorial/background-tasks.md | - | 10 | - |
+| How do I return a custom status code for an error? | tutorial/handling-errors.md | - | 4 | - |
+
 ## Tests
 
 `make check` runs ruff, `mypy --strict` and pytest: 248 tests at `20809ed`, all passing here (7.2 s). In CI's test job
@@ -195,6 +241,25 @@ here before it was fixed.
 One judgement call went against the review: it expected a raw include outside a fence to become a fenced block, as
 DESIGN.md said; the documentation build inserts it as Markdown, so Recall now does too and DESIGN.md says so.
 
+## Review of day 2
+
+One agent reviewed day 2 at `2fba151` (18 minutes, correctness framing, its own worktree), and reproduced 8 defects as
+16 failing tests (`tests/review_d2/`), each fixed and each test checked to fail on the commit before its fix:
+
+- **A vector list came back short after any ingest that rewrote chunks**: an HNSW scan picks its ef_search entries
+  before dropping dead ones, and the index keeps deleted and updated rows until VACUUM: 31 of 60 after a model change.
+  Fixed with pgvector's iterative scan (`fa35b0d`).
+- k or candidates over 1,000 (pgvector's ef_search limit) failed, or silently returned 40 in a fresh session (`fa35b0d`).
+- `search` checked the model in one snapshot and queried in another, so an ingest with another model between them
+  mixed the two models' vectors (`9c93d03`).
+- A 20,000-word question failed (ts_rank_cd allocates per query item): each distinct phrase once, the first 64
+  (`1e29847`).
+- Tracebacks instead of one-line errors: a day-1 schema, a model that can't load, a question that isn't UTF-8; and
+  `RECALL_EMBEDDER=Hash` silently loaded the model (`08ecf27`).
+
+From its judgement calls and surviving mutants: two hybrid tests that didn't test what their names said (`c4929b1`), a CI
+step that couldn't fail (`47dc914`), an unknown mode run as hybrid, splitting at tabs and newlines untested.
+
 ## Design decisions
 
 - **FastAPI's docs as the corpus.** MIT-licensed, one subject, many near-duplicate passages that differ in detail, and
@@ -229,8 +294,9 @@ DESIGN.md said; the documentation build inserts it as Markdown, so Recall now do
   passage (a base64 PNG in a code block) is truncated by the model.
 - Full-text ranking is ts_rank_cd, which has no inverse document frequency: a question in common words ("run a function
   after returning the response") can miss its page. Day 4 measures IDF weighting against it.
-- HNSW is approximate; `scripts/measure_retrieval.py` measures how far from exact it is here.
+- HNSW is approximate: exact on 300 easy questions at Recall's ef_search floor of 100, 0.989 at pgvector's default.
 - Reciprocal rank fusion favours chunks both retrievers rank moderately over one that only one ranks high.
+- Full-text search uses a question's first 64 distinct words; an OR query ranks every chunk holding any of them.
 - `recall search` loads the model for every command (seconds); day 3's API keeps it loaded.
 - Ingest embeds inside its one transaction: a first ingest holds it for about 40 s on a laptop CPU.
 - The local cluster uses trust authentication on localhost; it is for development only.
