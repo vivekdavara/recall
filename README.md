@@ -274,6 +274,12 @@ vacuums after a change (`b50239e`). It also found the first review's race test p
 races between the check and the query, `fe2f75f`) and a test reading every schema's indexes, the likely cause of an
 unexplained failure while the first agent ran (`0f494a6`).
 
+A third agent reviewed the second round of fixes at `27dcf48` (9 minutes) and found 4 defects (`tests/review_d2c/`),
+three of them regressions in those fixes: the post-ingest VACUUM failed a committed ingest on a non-autocommit
+connection, or when it couldn't get its lock (now only on an idle autocommit connection, and a failure is a warning,
+`c4c28dc`); the node budget didn't count the ORs between phrases (`68ab482`); and `recall search` held its connection
+idle while the model loaded, which a server's idle timeout ends (`74d3c75`).
+
 My own mistake, found during the second review: the first measurement script checked its plans only at ef_search 40,
 so its "exact at 100" was the planner's sequential scan; the floor I had raised to 100 is back at 40 (`9c4f90b`).
 
@@ -317,7 +323,8 @@ so its "exact at 100" was the planner's sequential scan; the floor I had raised 
 - Full-text search uses a question's first 64 distinct words within a 256-node query, skipping any word of more
   than 16 lexemes; an OR query ranks every chunk holding any of them.
 - An iterative HNSW scan gives up after 20,000 visited entries, dead ones included: ingest vacuums after a
-  change, but rows deleted some other way count until autovacuum.
+  change (on an autocommit connection; a failure is only a warning), but rows deleted some other way, or kept
+  visible by a long transaction elsewhere, count until autovacuum.
 - `recall search` loads the model for every command (seconds); day 3's API keeps it loaded.
 - Ingest embeds inside its one transaction: a first ingest holds it for about 40 s on a laptop CPU.
 - The local cluster uses trust authentication on localhost; it is for development only.
