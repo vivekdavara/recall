@@ -234,7 +234,7 @@ def test_the_vector_query_can_use_the_hnsw_index(conn: psycopg.Connection):
 def test_the_full_text_query_can_use_the_gin_index(conn: psycopg.Connection):
     load(conn)
     sql = f"WITH {retrieval._FULL_TEXT} SELECT * FROM fts"
-    params = {"question": "default values", "n": 5, "max_words": retrieval.MAX_QUESTION_WORDS}
+    params = {"question": "default values", "n": 5, **retrieval._TEXT_LIMITS}
     assert "chunks_search_vector_gin" in plan(conn, sql, params)
 
 
@@ -309,3 +309,27 @@ def test_a_question_splits_at_any_whitespace(conn: psycopg.Connection):
     load(conn)
     assert sorted(where(full_text(conn, "pydantic\temail"))) == ["body/", "tasks/"]
     assert sorted(where(full_text(conn, "pydantic\nemail"))) == ["body/", "tasks/"]
+
+
+def test_a_word_repeated_late_keeps_its_first_place(conn: psycopg.Connection):
+    load(conn)
+    filler = " ".join(f"w{i}" for i in range(retrieval.MAX_QUESTION_WORDS))
+    # "pydantic" is the 1st word and also the 66th: it counts where it first appears, inside the limit.
+    assert where(full_text(conn, f"pydantic {filler} pydantic")) == ["body/"]
+
+
+def test_a_phrase_of_too_many_lexemes_is_skipped_and_the_rest_searched(conn: psycopg.Connection):
+    load(conn)
+    long_word = ",".join(f"x{i}" for i in range(16))  # 16 lexemes: 31 nodes, the most a phrase may have
+    assert full_text(conn, long_word) == []  # kept, and matches nothing
+    # A pasted list: one word of 151 lexemes (301 nodes). Skipped, so it doesn't use up the budget for what follows.
+    huge = ",".join(f"x{i}" for i in range(151))
+    assert where(full_text(conn, huge + " pydantic")) == ["body/"]
+
+
+def test_words_stop_when_the_query_reaches_its_node_budget(conn: psycopg.Connection):
+    load(conn)
+    # Eight phrases of 31 nodes are 248 nodes; "pydantic" (1) fits after them, a 9th long phrase (31) wouldn't.
+    longs = [",".join(f"y{j}x{i}" for i in range(16)) for j in range(9)]
+    assert where(full_text(conn, " ".join(longs[:8]) + " pydantic")) == ["body/"]
+    assert full_text(conn, " ".join(longs) + " pydantic") == []

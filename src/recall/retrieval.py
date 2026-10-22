@@ -31,8 +31,12 @@ RRF_K = 60
 EF_SEARCH_MIN = 40
 # pgvector's largest ef_search. A list is at most this long, so ef_search can always be raised to the list length.
 MAX_K = 1000
-# Distinct searchable words of a question used by full-text search (see _FULL_TEXT).
+# What full-text search uses of a question (see _FULL_TEXT): its first 64 distinct words, a word's phrase only if it
+# has at most 16 lexemes (31 query nodes), and words only while the query has at most 256 nodes in all.
 MAX_QUESTION_WORDS = 64
+MAX_PHRASE_NODES = 31
+MAX_QUERY_NODES = 256
+_TEXT_LIMITS = {"max_words": MAX_QUESTION_WORDS, "max_phrase_nodes": MAX_PHRASE_NODES, "max_nodes": MAX_QUERY_NODES}
 
 
 @dataclass(frozen=True)
@@ -59,9 +63,12 @@ class ModelMismatch(RuntimeError):
 # identifier: response_model_exclude_unset is four lexemes, and ORing those four ranks every chunk about response
 # models above the one about that parameter; as a phrase they must be adjacent, as they are in the identifier. A
 # word that is only stop words (or punctuation) has no lexemes and is left out. The text form of a tsquery quotes
-# each lexeme, so wrapping each phrase in parentheses and joining with ' | ' can't change what a lexeme says. Each
-# distinct phrase counts once, and only the first MAX_QUESTION_WORDS: ts_rank_cd allocates about 32 KB per query
-# item, so a question of 20,000 words asked PostgreSQL for 1.3 GB and failed (the day-2 review).
+# each lexeme, so wrapping each phrase in parentheses and joining with ' | ' can't change what a lexeme says. The
+# query's size is bounded (the limits above): ts_rank_cd allocates about 32 KB per query node, so a question of
+# 20,000 words asked PostgreSQL for 1.3 GB and failed, and one word with no spaces ("0,1,2,...,19999", a pasted
+# list) is a phrase of 39,999 nodes, whose text overflowed the stack when cast back to a tsquery (the day-2
+# reviews). So each distinct phrase counts once, a phrase over MAX_PHRASE_NODES is skipped, and words are taken in
+# order while the running count of nodes stays within MAX_QUERY_NODES, at most MAX_QUESTION_WORDS of them.
 _FULL_TEXT = """
 fts AS (
     SELECT id, score, row_number() OVER (ORDER BY score DESC, id) AS rank
@@ -70,14 +77,18 @@ fts AS (
         FROM chunks c, (
             SELECT string_agg('(' || phrase::text || ')', ' | ' ORDER BY n)::tsquery AS query
             FROM (
-                SELECT phrase, min(w.n) AS n
-                FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),
-                    LATERAL phraseto_tsquery('english', w.word) AS phrase
-                WHERE numnode(phrase) > 0
-                GROUP BY phrase
-                ORDER BY n
-                LIMIT %(max_words)s
-            ) words
+                SELECT phrase, n, sum(numnode(phrase)) OVER (ORDER BY n) AS nodes
+                FROM (
+                    SELECT phrase, min(w.n) AS n
+                    FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),
+                        LATERAL phraseto_tsquery('english', w.word) AS phrase
+                    WHERE numnode(phrase) BETWEEN 1 AND %(max_phrase_nodes)s
+                    GROUP BY phrase
+                    ORDER BY n
+                    LIMIT %(max_words)s
+                ) words
+            ) counted
+            WHERE nodes <= %(max_nodes)s
         ) q
         WHERE c.search_vector @@ q.query
         ORDER BY score DESC, c.id
@@ -127,7 +138,7 @@ def full_text(conn: psycopg.Connection, question: str, k: int = DEFAULT_K) -> li
     """The k chunks whose search vectors best match any of the question's words, by ts_rank_cd."""
     _check_sizes(k, k)
     sql = f"WITH {_FULL_TEXT} SELECT {_HIT_COLUMNS}, f.score, f.rank, NULL FROM fts f {_JOIN} ORDER BY f.rank"
-    return _hits(conn, sql, {"question": question, "n": k, "max_words": MAX_QUESTION_WORDS}, ef_search=None)
+    return _hits(conn, sql, {"question": question, "n": k, **_TEXT_LIMITS}, ef_search=None)
 
 
 def vector(conn: psycopg.Connection, query_vector: Sequence[float], k: int = DEFAULT_K) -> list[Hit]:
@@ -164,7 +175,7 @@ def hybrid(
         "n": candidates,
         "k": k,
         "rrf_k": rrf_k,
-        "max_words": MAX_QUESTION_WORDS,
+        **_TEXT_LIMITS,
     }
     return _hits(conn, sql, params, ef_search=candidates)
 

@@ -252,7 +252,9 @@ are ORed. OR, because `plainto_tsquery` ANDs every word, so a chunk would need a
 in more words than any passage shares. A phrase per word, because the parser splits identifiers:
 `response_model_exclude_unset` is four lexemes, and ORing them ranked every chunk about response models above the one
 about that parameter (it was 4th; as a phrase, 1st). Words that are only stop words drop out; a question with none
-left matches nothing. Chunks matching the query (through the GIN index) are ranked by `ts_rank_cd` with the A/B/D
+left matches nothing. The query's size is bounded: each distinct phrase once, phrases of at most 16 lexemes, and
+words in order while the query has at most 256 nodes (at most 64 words); ts_rank_cd's memory grows with the query,
+and a 20,000-word question or one pasted list failed before (the day-2 reviews). Chunks matching the query (through the GIN index) are ranked by `ts_rank_cd` with the A/B/D
 weights (1.0, 0.4, 0.1) and normalization 1 (divided by 1 + log of the chunk's length). This is not BM25: ts_rank_cd
 counts how often and how close together the words occur but has no inverse document frequency, so a common word
 ("return", "response") counts as much as a rare one. The smoke questions show the cost (a question in common words
