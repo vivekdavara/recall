@@ -382,3 +382,18 @@ That `search` checked the stored model in one snapshot and queried in another (a
 models' vectors; now one REPEATABLE READ transaction); that ef_search can't exceed 1,000, and a fresh session silently
 fell back to 40 (lists are capped at 1,000); that a 20,000-word question made ts_rank_cd ask for 1.3 GB (each distinct
 word once, the first 64); and four tracebacks the CLI now turns into one-line errors.
+
+**Did your fixes have bugs?**
+Yes; a second review of only the fixes found three. The 64-word cap didn't bound the query: one pasted list with no
+spaces ("0,1,2,...,19999") is a single word whose phrase has 40,000 nodes, so the cap is now on nodes too (256, and a
+word of more than 16 lexemes is skipped). `search` guarded its own transaction with `conn.autocommit`, which is still
+true inside a caller's transaction; it checks the connection is idle now. And the iterative scan does give up, after
+`hnsw.max_scan_tuples` (20,000) visited entries, dead ones included, so ingest now runs `VACUUM (ANALYZE)` after a
+change, which also gives the planner statistics. It also showed the first review's race test passing for the wrong
+reason after my fix (the race had moved before the check), so a new test races between the check and the query and
+fails under READ COMMITTED.
+
+**How did a test fail only sometimes?**
+`test_the_indexes_exist` read `pg_indexes` for every schema in the test database, so while a review agent ran its own
+tests there, extra rows appeared. I had guessed at a Hypothesis deadline; the second review found the real cause, and
+the test now reads only its own schema.
