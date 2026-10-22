@@ -98,3 +98,54 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           RECALL_REQUIRE_PG_SCRIPT: "1"
         run: pytest tests/test_pg_script.py
+
+  model:
+    # The real embedding model (bge-small-en-v1.5 on the CPU) on the real corpus: ingest it, search it in every mode.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: recall_test
+          POSTGRES_INITDB_ARGS: --locale-provider=builtin --builtin-locale=C.UTF-8
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d recall_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      RECALL_TEST_DATABASE_URL: postgresql://postgres@localhost:5544/recall_test
+      # Turn the model tests' skips into failures: here the model must be there.
+      RECALL_REQUIRE_MODEL: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install (CPU-only PyTorch; the default Linux wheel brings CUDA)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e '.[dev,embed]'
+      - name: Cache the model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ hashFiles('src/recall/embedding.py') }}
+      - name: Fetch the pinned corpus
+        run: recall fetch
+      - name: Model tests (unit, then the real corpus)
+        run: pytest -m model -s
+      - name: Token fit
+        run: |
+          {
+            echo '### Chunks counted in model tokens (scripts/token_fit.py)'
+            echo '```'
+            python scripts/token_fit.py 2>/dev/null
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
