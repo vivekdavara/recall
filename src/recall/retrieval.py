@@ -68,7 +68,8 @@ class ModelMismatch(RuntimeError):
 # 20,000 words asked PostgreSQL for 1.3 GB and failed, and one word with no spaces ("0,1,2,...,19999", a pasted
 # list) is a phrase of 39,999 nodes, whose text overflowed the stack when cast back to a tsquery (the day-2
 # reviews). So each distinct phrase counts once, a phrase over MAX_PHRASE_NODES is skipped, and words are taken in
-# order while the running count of nodes stays within MAX_QUERY_NODES, at most MAX_QUESTION_WORDS of them.
+# order while the query's running count of nodes, its ORs included, stays within MAX_QUERY_NODES, at most
+# MAX_QUESTION_WORDS of them.
 _FULL_TEXT = """
 fts AS (
     SELECT id, score, row_number() OVER (ORDER BY score DESC, id) AS rank
@@ -77,7 +78,8 @@ fts AS (
         FROM chunks c, (
             SELECT string_agg('(' || phrase::text || ')', ' | ' ORDER BY n)::tsquery AS query
             FROM (
-                SELECT phrase, n, sum(numnode(phrase)) OVER (ORDER BY n) AS nodes
+                -- Each phrase's nodes and the OR before it (the first has none).
+                SELECT phrase, n, sum(numnode(phrase) + 1) OVER (ORDER BY n) - 1 AS nodes
                 FROM (
                     SELECT phrase, min(w.n) AS n
                     FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),

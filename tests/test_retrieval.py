@@ -329,10 +329,13 @@ def test_a_phrase_of_too_many_lexemes_is_skipped_and_the_rest_searched(conn: psy
 
 def test_words_stop_when_the_query_reaches_its_node_budget(conn: psycopg.Connection):
     load(conn)
-    # Eight phrases of 31 nodes are 248 nodes; "pydantic" (1) fits after them, a 9th long phrase (31) wouldn't.
-    longs = [",".join(f"y{j}x{i}" for i in range(16)) for j in range(9)]
-    assert where(full_text(conn, " ".join(longs[:8]) + " pydantic")) == ["body/"]
+    # A phrase of 16 lexemes is 31 nodes, and each phrase after the first adds an OR: seven are 7 * 31 + 6 = 223 nodes,
+    # and "pydantic" makes 225; eight are 255, and "pydantic" would make 257, over the 256.
+    longs = [",".join(f"y{j}x{i}" for i in range(16)) for j in range(8)]
+    assert where(full_text(conn, " ".join(longs[:7]) + " pydantic")) == ["body/"]
     assert full_text(conn, " ".join(longs) + " pydantic") == []
+    # Words before the budget runs out are kept: "pydantic" first, then the long phrases, then "email", left out.
+    assert where(full_text(conn, "pydantic " + " ".join(longs) + " email")) == ["body/"]
 
 
 def test_lists_of_exactly_1000_are_allowed(conn: psycopg.Connection):
