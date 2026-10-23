@@ -124,6 +124,9 @@ def make_pool(
 def _question(value: str) -> str:
     if not value.strip():
         raise ValueError("the question is empty")
+    if "\x00" in value:
+        # Valid JSON ("\u0000"), but PostgreSQL text can't hold a NUL, so the query would fail (a 500).
+        raise ValueError("the question holds a NUL character")
     try:
         value.encode("utf-8")
     except UnicodeEncodeError:
@@ -273,10 +276,15 @@ def create_app(make_services: Callable[[], Services] = services_from_environment
     async def unavailable(request: Request, e: Unavailable) -> JSONResponse:
         return JSONResponse({"detail": str(e)}, status_code=503)
 
+    def needs_embedder(mode: retrieval.Mode) -> None:
+        if mode != "full-text" and state["models"].embedder is None:
+            raise Unavailable(f"no embedding model is loaded, so only full-text search works, not {mode}")
+
     @app.post("/ask")
     def post_ask(body: AskRequest) -> dict[str, Any]:
         services: Services = state["services"]
         models: _OneAtATime = state["models"]
+        needs_embedder(body.mode)
         with connection() as conn:
             result, timings = ask(
                 conn,
@@ -295,6 +303,7 @@ def create_app(make_services: Callable[[], Services] = services_from_environment
     @app.post("/search")
     def post_search(body: SearchRequest) -> dict[str, Any]:
         models: _OneAtATime = state["models"]
+        needs_embedder(body.mode)
         with connection() as conn:
             hits = retrieval.search(conn, body.question, models.embedder, body.mode, body.k, candidates=body.candidates)
         if not body.rerank:

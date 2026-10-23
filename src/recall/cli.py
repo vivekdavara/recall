@@ -138,12 +138,22 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_search(args: argparse.Namespace) -> int:
+def question_problem(question: str) -> str | None:
+    """Why PostgreSQL can't take this question, if it can't."""
     try:
-        args.question.encode("utf-8")
+        question.encode("utf-8")
     except UnicodeEncodeError:
         # Python reads undecodable argv bytes as lone surrogates (e.g. Latin-1 from a file), which psycopg can't send.
-        print("recall: the question isn't valid UTF-8", file=sys.stderr)
+        return "the question isn't valid UTF-8"
+    if "\x00" in question:
+        return "the question holds a NUL character"  # PostgreSQL text can't hold one
+    return None
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    problem = question_problem(args.question)
+    if problem:
+        print(f"recall: {problem}", file=sys.stderr)
         return 1
     try:
         embedder = None
@@ -175,20 +185,19 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 def cmd_ask(args: argparse.Namespace) -> int:
     from recall.answer import ask
-    from recall.llm import provider_from_environment
+    from recall.llm import ProviderError, provider_from_environment
     from recall.rerank import make_reranker
 
-    try:
-        args.question.encode("utf-8")
-    except UnicodeEncodeError:
-        print("recall: the question isn't valid UTF-8", file=sys.stderr)
+    problem = question_problem(args.question)
+    if problem:
+        print(f"recall: {problem}", file=sys.stderr)
         return 1
     if not args.no_rerank and args.passages > args.depth:
         print(f"recall: passages must be from 1 to depth ({args.depth}), not {args.passages}", file=sys.stderr)
         return 1
     try:
         provider = provider_from_environment()
-    except ValueError as e:  # RECALL_LLM names no provider
+    except (ValueError, ProviderError) as e:  # RECALL_LLM names no provider, or the live one's package is missing
         print(f"recall: {e}", file=sys.stderr)
         return 1
     try:
@@ -297,7 +306,7 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("question")
     a.add_argument("--mode", choices=retrieval.MODES, default="hybrid")
     a.add_argument(
-        "--passages", type=positive, default=5, help="how many passages to answer from (default %(default)s)"
+        "--passages", type=list_length, default=5, help="how many passages to answer from (default %(default)s)"
     )
     a.add_argument(
         "--depth", type=list_length, default=20, help="how many retrieved chunks to rerank (default %(default)s)"

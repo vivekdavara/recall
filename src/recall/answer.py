@@ -89,6 +89,7 @@ def answer(
         except (ProviderError, MalformedAnswer) as e:
             problems.append(str(e))
         else:
+            problems.extend(completion.notes)
             problems.extend(checked.problems)
             if not checked.answerable:
                 return Answer(question, "none", (), passages, name, completion.model, tuple(problems))

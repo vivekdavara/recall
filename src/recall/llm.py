@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -46,6 +46,7 @@ class Completion:
     model: str  # the model that wrote the text, as the provider reported it (HAND_WRITTEN for test recordings)
     input_tokens: int = 0
     output_tokens: int = 0
+    notes: tuple[str, ...] = ()  # anything the caller should report with the answer (a recording that failed)
 
 
 class Provider(Protocol):
@@ -151,7 +152,12 @@ class Recorder:
 
     def complete(self, request: Request) -> Completion:
         completion = self.inner.complete(request)
-        self.written.append(write_recording(self.directory, request, completion, self.inner.name))
+        try:
+            self.written.append(write_recording(self.directory, request, completion, self.inner.name))
+        except OSError as e:
+            # The completion is paid for and good: answer with it, and say it wasn't saved.
+            reason = " ".join(str(e).split())[:200]
+            return replace(completion, notes=(*completion.notes, f"the answer wasn't recorded: {reason}"))
         return completion
 
 
