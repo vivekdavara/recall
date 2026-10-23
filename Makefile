@@ -6,7 +6,7 @@ export RECALL_TEST_DATABASE_URL ?= postgresql://localhost:5544/recall_test
 venv:
 	python3.11 -m venv .venv
 	$(PY) -m pip install -q --upgrade pip
-	$(PY) -m pip install -q -e '.[dev]'
+	$(PY) -m pip install -q -e '.[dev,api,llm]'
 
 lint:
 	$(PY) -m ruff check .
