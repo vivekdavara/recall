@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence
@@ -172,6 +173,87 @@ def cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ask(args: argparse.Namespace) -> int:
+    from recall.answer import ask
+    from recall.llm import provider_from_environment
+    from recall.rerank import make_reranker
+
+    try:
+        args.question.encode("utf-8")
+    except UnicodeEncodeError:
+        print("recall: the question isn't valid UTF-8", file=sys.stderr)
+        return 1
+    if not args.no_rerank and args.passages > args.depth:
+        print(f"recall: passages must be from 1 to depth ({args.depth}), not {args.passages}", file=sys.stderr)
+        return 1
+    try:
+        provider = provider_from_environment()
+    except ValueError as e:  # RECALL_LLM names no provider
+        print(f"recall: {e}", file=sys.stderr)
+        return 1
+    try:
+        embedder = None
+        if args.mode != "full-text":
+            # As in search: check the stored vectors' model before loading one, on a connection closed meanwhile.
+            with db.connect() as conn:
+                retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
+            embedder = make_embedder(args.embedder)
+        reranker = make_reranker(args.reranker)
+        with db.connect() as conn:
+            result, timings = ask(
+                conn,
+                args.question,
+                embedder,
+                reranker,
+                provider,
+                mode=args.mode,
+                passages=args.passages,
+                depth=args.depth,
+                candidates=args.candidates,
+                use_reranker=not args.no_rerank,
+            )
+    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+        url = db.describe_url(db.database_url())
+        print(f"recall: the database {url} has no corpus or an older schema: run recall ingest", file=sys.stderr)
+        return 1
+    if args.json:
+        from recall.api import _answer
+
+        print(json.dumps(_answer(result, timings), indent=2))
+        return 0
+    if result.method == "none":
+        print("no answer: the passages retrieved don't answer the question" if result.passages else "no results")
+    else:
+        print(result.text)
+    if result.claims:
+        print("\ncitations:")
+        for n, h in enumerate(result.passages, 1):
+            cited = [x for c in result.claims for x in c.citations if x.passage == n]
+            if cited:
+                print(f"  [{n}] {h.url}  ({h.path}, chars {', '.join(f'{x.start}-{x.end}' for x in cited)})")
+    by = f"{result.provider} ({result.model})" if result.method == "llm" else result.method
+    print(f"\nanswered by: {by}; {len(result.passages)} passages")
+    for problem in result.problems:
+        print(f"  note: {problem}")
+    print(
+        f"time: retrieve {timings.retrieve:.1f} ms, rerank {timings.rerank:.1f} ms, answer {timings.answer:.1f} ms"
+        " (models loaded before)"
+    )
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print("recall: the API needs FastAPI and uvicorn: pip install -e '.[api]'", file=sys.stderr)
+        return 1
+    from recall.api import create_app
+
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="info")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="recall", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -211,6 +293,30 @@ def parser() -> argparse.ArgumentParser:
     q.add_argument("--width", type=positive, default=160, help="characters of each chunk to print")
     add_embedder_option(q)
     q.set_defaults(run=cmd_search)
+    a = sub.add_parser("ask", help="answer a question with citations (the LLM by $RECALL_LLM, else extractive)")
+    a.add_argument("question")
+    a.add_argument("--mode", choices=retrieval.MODES, default="hybrid")
+    a.add_argument(
+        "--passages", type=positive, default=5, help="how many passages to answer from (default %(default)s)"
+    )
+    a.add_argument(
+        "--depth", type=list_length, default=20, help="how many retrieved chunks to rerank (default %(default)s)"
+    )
+    a.add_argument("--candidates", type=list_length, default=retrieval.DEFAULT_CANDIDATES)
+    a.add_argument("--no-rerank", action="store_true", help="answer from the retrieval order")
+    a.add_argument("--json", action="store_true", help="print what POST /ask returns")
+    add_embedder_option(a)
+    a.add_argument(
+        "--reranker",
+        choices=("model", "overlap"),
+        default=os.environ.get("RECALL_RERANKER", "model"),
+        help="model: the pinned cross-encoder (default; $RECALL_RERANKER overrides); overlap: the stub",
+    )
+    a.set_defaults(run=cmd_ask)
+    serve = sub.add_parser("serve", help="run the HTTP API (POST /ask, POST /search, GET /healthz)")
+    serve.add_argument("--host", default="127.0.0.1", help="the address to listen on (default %(default)s)")
+    serve.add_argument("--port", type=positive, default=8109, help="(default %(default)s)")
+    serve.set_defaults(run=cmd_serve)
     return p
 
 
@@ -243,6 +349,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if getattr(args, "embedder", "model") not in EMBEDDERS:
         # argparse checks choices on the command line, not on a default taken from $RECALL_EMBEDDER.
         p.error(f"RECALL_EMBEDDER must be one of {', '.join(EMBEDDERS)}, not {args.embedder!r}")
+    if getattr(args, "reranker", "model") not in ("model", "overlap"):
+        p.error(f"RECALL_RERANKER must be one of model, overlap, not {args.reranker!r}")
     try:
         code: int = args.run(args)
     except (CorpusError, NormalizeError, ModelUnavailable, retrieval.ModelMismatch) as e:
