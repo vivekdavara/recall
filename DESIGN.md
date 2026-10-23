@@ -367,9 +367,10 @@ its sentences would look like an answer.
 
 The models load once, at startup (`services_from_environment`: `RECALL_EMBEDDER`, `RECALL_RERANKER`, `RECALL_LLM`). The
 handlers are plain functions, which FastAPI runs on its thread pool; each takes a connection from a pool (1 to 4
-autocommit connections, a 5 s wait) for the length of the request. Model calls run one at a time, under one lock: a
-Hugging Face fast tokenizer sets its truncation and padding on each call, and two threads doing that at once can fail;
-the CPU is shared by the calls anyway.
+autocommit connections, a 5 s wait) for the length of the request. Model calls run one at a time, under one lock:
+PyTorch already spreads one call over the cores, so concurrent calls would mostly take turns, and Hugging Face's fast
+tokenizers have failed under concurrent use in the past ("Already borrowed"). It is a precaution: 320 concurrent calls
+from 8 threads without the lock raised nothing here (tokenizers 0.23.3).
 
 Requests are validated: a question of 1 to 2,000 characters that isn't blank and is valid Unicode (JSON can carry a
 lone surrogate, `"\ud800"`, which PostgreSQL can't take), sizes within bounds, `passages` at most `depth` when

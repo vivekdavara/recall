@@ -391,8 +391,9 @@ so its "exact at 100" was the planner's sequential scan; the floor I had raised 
   a failed or unusable model answer still gives an answer whose every claim is a span, with the reason the model's
   wasn't used. When the model says the passages don't answer, there is no answer: extractive sentences would look
   like one.
-- **The API runs model calls one at a time.** Simple, and safe with a fast tokenizer shared by threads; the CPU is
-  the limit either way. A pool of four connections serves the requests.
+- **The API runs model calls one at a time.** PyTorch already uses every core for one call, so the CPU is the limit
+  either way; and it doesn't rely on the tokenizers being thread-safe (320 concurrent calls without the lock raised
+  nothing here, so it is a precaution). A pool of four connections serves the requests.
 
 ## Limitations
 

@@ -35,8 +35,10 @@ POOL_TIMEOUT = 5.0  # seconds a request waits for a connection before a 503
 
 
 class _OneAtATime:
-    """Runs the models' calls one at a time. A Hugging Face fast tokenizer sets its truncation and padding on each
-    call, and two threads doing that at once can fail ("Already borrowed"); the CPU is shared by the calls anyway."""
+    """Runs the models' calls one at a time. PyTorch already spreads one call over the CPU's cores, so concurrent
+    calls would mostly take turns anyway; and Hugging Face's fast tokenizers have failed under concurrent use before
+    ("Already borrowed", when two threads set truncation at once). 320 calls from 8 threads without the lock raised
+    nothing here (tokenizers 0.23.3), so the lock is a precaution, not a fix for a failure seen."""
 
     def __init__(self, embedder: Embedder | None, reranker: Reranker) -> None:
         lock = threading.Lock()

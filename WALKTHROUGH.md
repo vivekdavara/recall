@@ -380,9 +380,10 @@ psycopg pool of up to four autocommit connections serves requests, each holding 
 a factory for its services, so tests pass the hash embedder, the overlap reranker and a pool into a test schema.
 
 **Why run model calls one at a time?**
-A Hugging Face fast tokenizer sets its truncation and padding on every call, and two threads doing that at once can fail
-("Already borrowed"); and the CPU is shared by the calls anyway. One lock around embedding and reranking is the simple
-safe choice; database work still runs in parallel.
+PyTorch already spreads one call over all the cores, so two calls at once would mostly take turns; and Hugging Face's
+fast tokenizers have failed under concurrent use before ("Already borrowed"). I first wrote that they do fail, then
+tested it: 320 calls from 8 threads without the lock raised nothing (tokenizers 0.23.3). So the lock is a precaution I
+can defend on cost, not a fix for a failure I've seen; database work still runs in parallel.
 
 **What status codes can it return?**
 200; 422 for a bad request (an empty, blank or 2,001-character question, sizes out of bounds, passages above depth when
