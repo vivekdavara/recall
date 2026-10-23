@@ -7,8 +7,8 @@ written from the top passages with a citation for each claim. An evaluation harn
 MRR) and answer faithfulness on labelled questions, and CI fails when retrieval gets worse.
 
 This file is the specification. Day 1 built the corpus, its normalization and chunking, the storage schema and the
-local database; day 2 the embeddings, full-text search, vector search and their fusion. The sections for later days say
-what they will add and are marked so.
+local database; day 2 the embeddings, full-text search, vector search and their fusion; day 3 the reranker, answers
+with checked citations, and the API. The sections for later days say what they will add and are marked so.
 
 ## Goals and non-goals
 
@@ -283,6 +283,101 @@ still be fused in.
 
 `recall search QUESTION --mode hybrid|full-text|vector -k 10` prints the hits; full-text search loads no model.
 
+## Reranking
+
+A cross-encoder reads the question and a passage together and scores how well the passage answers it. The
+retrievers can't: each embeds or matches the question and the passages apart. Reading every pair is one pass of
+the model each, too slow for the whole corpus, so it reranks only the top of the fused list: `ask` retrieves
+hybrid's top 20 (`DEFAULT_DEPTH`) and answers from the reranked top 5. A chunk is scored with its heading path above
+it, as it was embedded (`passage_text`).
+
+**The model.** `cross-encoder/ms-marco-MiniLM-L6-v2` (Apache-2.0), a 6-layer MiniLM trained on MS MARCO passage
+ranking, pinned to revision `233902d2...` (a 91 MB weights file). It reads question and passage as one sequence of at
+most 512 tokens (`[CLS] question [SEP] passage [SEP]`); a longer pair loses the passage's end. It has the same
+WordPiece tokenizer as the embedder, and the same check applies (`scripts/token_fit.py --reranker --question ...`):
+with a question attached, 1 to 3 of the 1,503 passages go over 512 (0.2% at most, for a 24-word question). Its
+scores are logits, comparable only within one question.
+
+**The interface.** `Reranker` has a `name` and `score(question, texts)`, one score per text, higher is better.
+`rerank` orders hits by score, equal scores keeping the retrieval order, and refuses a wrong number of scores or one
+that isn't finite. `CrossEncoderReranker` is the model (the `embed` extra); `OverlapReranker`, for tests, scores the
+share of the question's distinct words in the text, so tests predict its order exactly.
+
+## Answers
+
+`recall.answer.answer` writes an answer from the passages, and every claim that reaches the caller cites a span of
+one of them. Two writers:
+
+**The LLM**, through a `Provider` (`recall.llm`): one `Request` (system prompt, user prompt, a JSON schema) in, one
+`Completion` (text, model, token counts) out.
+
+- `RecordedProvider`, the default (`RECALL_LLM=recorded`), replays a recording: a JSON file in `recordings/` named
+  after the SHA-256 of the request's three parts (canonical JSON), holding the request and the response. A recording
+  whose stored request no longer hashes to its name is refused. A question whose exact prompt wasn't recorded gets
+  the extractive answer. So tests and CI never need a key or the network.
+- `AnthropicProvider`, only when `RECALL_LLM=anthropic`: Claude (`claude-opus-5-5` unless `RECALL_LLM_MODEL` says
+  otherwise) through the official SDK, which finds the key in the environment; structured output
+  (`output_config.format` with the answer's JSON schema) so the response is JSON of the right shape, effort
+  `medium`, and the server-side fallback (`fallbacks: "default"`), which re-runs a request the model's safety
+  classifiers decline on the model recommended for that kind of refusal. A refusal, an answer cut off at
+  `max_tokens`, or any error the SDK's own retries didn't fix is a `ProviderError`. With `RECALL_RECORD=1` each live
+  completion is saved as a recording. It is tested against a local stand-in for the API, not against Claude: there
+  is no key here.
+- `RECALL_LLM=none`: always the extractive answer.
+
+The prompt (`build_request`) numbers the passages from 1, each with its page and heading path, then the question;
+the system prompt says to answer only from them, in short claims, each citing passages by number with a quote
+copied word for word, and to say when they don't answer. It is deterministic, so a recording of it is found again.
+
+**Citations** (`recall.citations.check`). The answer must be `{"answerable": bool, "claims": [{"text", "citations":
+[{"passage", "quote"}]}]}`. A citation counts only if its passage is one of those given (an integer from 1, not a
+boolean or a float) and its quote is in that passage's text: exactly, or with any run of whitespace standing for any
+other (models re-wrap what they copy). A quote must hold at least 8 characters besides whitespace, since one word
+would match almost any passage. A citation that counts carries the chunk, the page and the span: offsets into the
+page's normalized text, with `document[start:end]` the passage's own text that the quote matched. A claim with no
+citation that counts is dropped; at most 20 claims and 5 citations a claim are checked. Each drop is reported, with
+its reason, in the answer's `problems`. Only a response that isn't an answer at all (not JSON, or not that shape at
+the top) raises `MalformedAnswer`. The check is about grounding, not truth: a quote shows where a claim came from,
+not that the claim follows from it. Day 4 measures that (faithfulness).
+
+**The extractive answer** (`recall.extractive`), when there is no provider, the provider fails, its response isn't an
+answer, or none of its claims' citations check out: the passages' own sentences that the reranker scores highest for
+the question, the best 3, best first, each a claim citing its own span. A sentence is prose: outside fenced code, not a
+heading, a list item's marker left out; it ends at `.`, `!` or `?` followed by whitespace (and any closing quote,
+bracket, `*` or backtick), except after a common abbreviation (`e.g.`). Sentences of fewer than 4 words ("Tip:") are
+left out. A code block too long for one chunk is split across chunks, so a chunk can start inside one; read alone, its
+code would be prose and its closing fence would hide the prose after it. So `ask` reads each passage's page
+(`load_documents`) and sentences are found in the page; a page that no longer holds the passage (an ingest in
+between) is not used. On the real corpus that changes 129 of 1,503 chunks' sentences (5,836 read alone, 5,496 in
+their pages). The extractive answer can only say what the passages say, in their order of relevance, not as prose.
+
+If the model says the passages don't answer the question, there is no answer (`method: none`), not an extractive one:
+its sentences would look like an answer.
+
+## The API
+
+`recall serve` (uvicorn, `127.0.0.1:8109`) runs `recall.api.create_app()`:
+
+- `POST /ask` `{question, mode, passages, depth, candidates, rerank}`: the answer as text (each claim followed by its
+  passage numbers), its claims with their citations (passage, chunk, page, URL, quote, span), the passages, what
+  answered (`method`, `provider`, `model`), `problems`, and each step's time in milliseconds.
+- `POST /search` `{question, mode, k, candidates, rerank}`: the hits, reranked on request.
+- `GET /healthz`: the corpus's size, the stored vectors' model, and the models in use; 503 if the database is
+  unavailable or the stored vectors aren't the embedder's.
+
+The models load once, at startup (`services_from_environment`: `RECALL_EMBEDDER`, `RECALL_RERANKER`, `RECALL_LLM`). The
+handlers are plain functions, which FastAPI runs on its thread pool; each takes a connection from a pool (1 to 4
+autocommit connections, a 5 s wait) for the length of the request. Model calls run one at a time, under one lock: a
+Hugging Face fast tokenizer sets its truncation and padding on each call, and two threads doing that at once can fail;
+the CPU is shared by the calls anyway.
+
+Requests are validated: a question of 1 to 2,000 characters that isn't blank and is valid Unicode (JSON can carry a
+lone surrogate, `"\ud800"`, which PostgreSQL can't take), sizes within bounds, `passages` at most `depth` when
+reranking, no unknown fields. A bad request is a 422 that says where and why but not the input: FastAPI's own handler
+echoes it back, and a lone surrogate can't be encoded, which made the 422 a 500. No database, no corpus, an older
+schema, or vectors from another model are 503s, and the message says nothing of the URL or the server's error, either
+of which can hold part of a password.
+
 ## The local database
 
 `scripts/pg.sh` runs a project-local PostgreSQL 17 cluster on port 5544 with its data in `.pgdata/` (gitignored):
@@ -311,16 +406,19 @@ flowchart LR
         E -->|embed: bge-small| F[(pgvector HNSW)]
         E -->|generated tsvector| G[(full-text GIN)]
     end
-    subgraph online["Answer a question (day 2: retrieval; day 3: the rest)"]
+    subgraph online["Answer a question (day 2: retrieval; day 3: rerank, answer, API)"]
         Q[question] --> V[vector top-k]
         Q --> K[full-text top-k]
         F --> V
         G --> K
         V --> R[reciprocal rank fusion]
         K --> R
-        R --> X[cross-encoder rerank]
-        X --> L[answer with citations<br/>recorded LLM or extractive]
-        L --> API[FastAPI /ask]
+        R -->|top 20| X[cross-encoder rerank]
+        X -->|top 5| L{LLM provider:<br/>recorded by default}
+        L -->|claims| C[citation check:<br/>quote in its passage]
+        C -->|none pass, or no model| XT[extractive: best<br/>sentences, own spans]
+        C --> API[FastAPI /ask,<br/>recall ask]
+        XT --> API
     end
     subgraph eval["Measure (days 4-5)"]
         S[labelled questions<br/>with gold passages] --> M[recall@k, MRR,<br/>faithfulness]
@@ -331,10 +429,7 @@ flowchart LR
 ## Later days (plan)
 
 - **Day 2, retrieval.** Done: "Embeddings" and "Retrieval" above.
-- **Day 3, answers.** A provider interface for the LLM (a recorded provider by default, so tests and CI need no key;
-  a live provider only when an environment variable enables it), an extractive fallback that answers with the best
-  sentences when no LLM is configured, a cross-encoder reranker, citation checking (every cited span must be one of the
-  retrieved chunks), and the API.
+- **Day 3, answers.** Done: "Reranking", "Answers" and "The API" above.
 - **Day 4, evaluation.** A labelled question set (synthetic, written against the pinned corpus, each question with its
   gold chunk spans), recall@k and MRR per retriever, faithfulness checks on answers, and a CI job that fails when
   recall@k drops below the committed baseline. Also BM25-style weighting (inverse document frequency) for full-text
@@ -369,6 +464,14 @@ flowchart LR
   `tests/test_real_retrieval.py`: the real corpus ingested with the real model and searched in every mode (a smoke
   test with six hand-written questions, not an evaluation). They skip without the `embed` extra, except in CI's model
   job.
+- **Answers** (day 3): the provider interface (request keys, recordings replayed and refused when edited, the
+  recorder, the live provider's request and failures with a fake client, and the real SDK against a local stand-in
+  for the API); the citation check (one test per rule and reason, and Hypothesis: no JSON value makes it raise
+  anything but MalformedAnswer, and any quote taken from a passage checks out with the span it came from); sentence
+  splitting and the extractive answer (each rule, a chunk inside a split code block, Hypothesis over generated
+  Markdown); the reranker (order, ties, bad scores, the stub; the real model's rankings, pinned name and length);
+  `answer` and `ask` with every fallback; the API with a test client (answers, a replayed recording, search, health,
+  every 422 and 503); `recall ask` and `recall serve`.
 - **CI**, four jobs: lint (ruff), types (mypy, strict) and the tests with the pgvector service container; a corpus
   job that fetches the real pinned archive from GitHub, checks it against the manifest and runs the real-corpus tests;
   a pg-script job that installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test; and a model
