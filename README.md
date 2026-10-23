@@ -14,7 +14,7 @@ likely to ask.
 |---|---|---|
 | 1 | Design; the corpus (fetched, checked, normalized); chunking; the schema and ingest; the local database; CI | done |
 | 2 | Local embeddings in pgvector (HNSW), full-text retrieval, hybrid by reciprocal rank fusion, `recall search` | done |
-| 3 | Answers with citations (recorded LLM provider, extractive fallback), a cross-encoder reranker, the API | planned |
+| 3 | A cross-encoder reranker, answers with checked citations (recorded LLM provider, extractive fallback), the API, `recall ask` | done |
 | 4 | The eval harness: labelled questions with gold passages, recall@k, MRR, faithfulness; a CI gate | planned |
 | 5 | The ablation table, results, v1.0.0 | planned |
 
@@ -39,8 +39,13 @@ flowchart LR
     D -->|recall ingest| E[(PostgreSQL 17<br/>documents, chunks)]
     E -->|embed: bge-small on CPU;<br/>generated tsvector| F[pgvector HNSW +<br/>full-text GIN]
     F -->|recall search| R[full-text, vector,<br/>hybrid by RRF]
-    R -.->|day 3| G[rerank, answer<br/>with citations]
-    G -.->|day 4| H[eval harness<br/>recall@k, MRR]
+    R -->|top 20| X[cross-encoder<br/>rerank]
+    X -->|top 5| G{LLM provider<br/>recorded by default}
+    G -->|claims| C[citation check:<br/>each quote in its passage]
+    C -->|none pass, or no model| XT[extractive: the best<br/>sentences, own spans]
+    C --> API[POST /ask,<br/>recall ask]
+    XT --> API
+    API -.->|day 4| H[eval harness<br/>recall@k, MRR]
 ```
 
 ## Layout
@@ -57,12 +62,20 @@ src/recall/
   ingest.py               documents, chunks and their vectors into PostgreSQL, idempotent, one transaction
   embedding.py            the Embedder interface, bge-small-en-v1.5 (pinned), a hash stub for tests
   retrieval.py            full-text, vector, and hybrid (reciprocal rank fusion) retrieval, each one SQL query
+  rerank.py               the Reranker interface, the MiniLM cross-encoder (pinned), an overlap stub for tests
+  llm.py                  the LLM provider interface: recorded (default), Claude (opt-in), the recorder
+  citations.py            the answer's JSON schema and the citation check (each quote in its passage, exact spans)
+  extractive.py           sentences outside code, and the extractive answer (the reranker's best sentences)
+  answer.py               the prompt, answer() with its fallbacks, ask(): retrieve, rerank, answer
+  api.py                  the FastAPI app: POST /ask, POST /search, GET /healthz
   db.py                   connections, migrations, pgvector's text form
   migrations/             numbered SQL files
   cli.py                  the recall command
 scripts/pg.sh             the project-local PostgreSQL 17 cluster (port 5544)
 scripts/token_fit.py      the chunks counted in the embedding model's own tokens
 scripts/measure_retrieval.py   HNSW against exact search, and each step's latency
+scripts/measure_answers.py     each answering step's latency, in-process or over HTTP
+recordings/               recorded LLM responses (none yet: no key here; see its README)
 tests/                    unit, property (Hypothesis), database and real-corpus tests
 ```
 
@@ -80,6 +93,9 @@ scripts/pg.sh start            # the local cluster on port 5544: databases recal
 .venv/bin/pip install -e '.[embed]'   # PyTorch and sentence-transformers, for the embedding model
 .venv/bin/recall ingest        # load and embed it into the recall database (runs the migrations; ~40 s on a laptop CPU)
 .venv/bin/recall search "how do I give a query parameter a default value?"   # hybrid; --mode full-text | vector
+.venv/bin/recall ask "How do I upload a file?"   # retrieve, rerank, answer with citations (--json: what /ask returns)
+.venv/bin/recall serve                           # the API on 127.0.0.1:8109 (models load once, ~5 s)
+curl -s localhost:8109/ask -H 'content-type: application/json' -d '{"question": "How do I upload a file?"}'
 make check                     # ruff, mypy --strict, and the tests (they use recall_test)
 scripts/pg.sh stop
 ```
@@ -90,6 +106,13 @@ the pipeline without PyTorch; ingest with another embedder embeds every chunk ag
 another embedder than its own. The first use of the model downloads it (133 MB) from Hugging Face, at a pinned
 revision. Settings: `RECALL_DATABASE_URL` (default `postgresql://localhost:5544/recall`), `RECALL_TEST_DATABASE_URL`
 (default `.../recall_test`), `RECALL_DATA_DIR` (default `data`).
+
+**Answers.** `RECALL_LLM` picks who writes them: `recorded` (the default) replays a recording of the exact prompt from
+`recordings/` (`RECALL_RECORDINGS`) and otherwise gives the extractive answer; `none` always gives the extractive
+answer; `anthropic` calls Claude (`claude-opus-5-5`, or `RECALL_LLM_MODEL`) through the official SDK, which needs
+`pip install -e '.[llm]'` and a key in the environment (`ANTHROPIC_API_KEY`, never written to the repository), and
+`RECALL_RECORD=1` saves each live answer as a recording. Tests and CI never call it. `RECALL_RERANKER=overlap` (or
+`--reranker overlap`) uses the stub instead of the cross-encoder. The first use of the reranker downloads it (91 MB).
 
 ## Results (day 1)
 
@@ -171,6 +194,44 @@ each mode's top 10, the same here and in CI):
 | How can I run a function after returning the response? | tutorial/background-tasks.md | - | 10 | - |
 | How do I return a custom status code for an error? | tutorial/handling-errors.md | - | 4 | - |
 
+## Results (day 3)
+
+Apple M3, macOS 26.6.2, Python 3.11.12, on battery (Low Power Mode off); the real corpus and models.
+
+**The reranker's input** (`.venv/bin/python scripts/token_fit.py --reranker --question "..."`; the same in CI's model job
+for the first two): with the question attached, the 1,503 passages are pairs of p50 192 / max 728 tokens for "upload a
+file" (1 over the cross-encoder's 512), p50 200 for the 11-word query-parameter smoke question (2 over), and p50 213 /
+max 749 for a 24-word question (3 over, 0.2%). A pair over 512 loses the passage's end.
+
+**Smoke questions, reranked** (`tests/test_real_retrieval.py`; six hand-written questions, not an evaluation; rank of the
+page; the same here and in CI on Linux). The last column is hybrid's top 20 reranked by the cross-encoder, which is
+what `ask` answers from (its top 5):
+
+| question | page | full-text | vector | hybrid | hybrid + rerank |
+|---|---|---|---|---|---|
+| Allow a frontend on another origin to call my API | tutorial/cors.md | 1 | 1 | 2 | 1 |
+| response_model_exclude_unset | tutorial/response-model.md | 1 | 1 | 1 | 1 |
+| How do I upload a file? | tutorial/request-files.md | 1 | 1 | 1 | 1 |
+| How do I declare a query parameter with a default value? | tutorial/query-params.md | 7 | 3 | 4 | 1 |
+| How can I run a function after returning the response? | tutorial/background-tasks.md | - | 10 | - | - |
+| How do I return a custom status code for an error? | tutorial/handling-errors.md | - | 4 | - | 5 |
+
+Reranking can only reorder what hybrid retrieved: background-tasks.md isn't in hybrid's top 20 (full-text misses it, so
+fusion ranks it low), and stays missed. Day 4 measures this on a labelled set.
+
+**Extractive answers.** With no recording (none exists: there is no key here), every answer is extractive: the
+reranker's three best sentences from the top 5 passages. For "How do I upload a file?" (`recall ask`):
+
+> You can also use `File()` with `UploadFile`, for example, to set additional metadata: [4] It's possible to upload
+> several files at the same time. [2] You can get metadata from the uploaded file. [5]
+
+Every citation is a span of its page (checked for all six smoke questions in CI), but the sentences are the
+passages' own, chosen one by one: they answer in pieces, not in prose, and for the background-tasks question they
+cite the wrong pages, since retrieval found none of the right ones.
+
+**Sentences inside split code blocks.** Reading each passage in its page changed the sentences of 129 of the 1,503
+chunks (5,836 sentences of four words or more read alone, 5,496 read in their pages).
+
 ## Tests
 
 `make check` runs ruff, `mypy --strict` and pytest: 248 tests at `20809ed`, all passing here (7.2 s). In CI's test job
@@ -205,6 +266,18 @@ the real-corpus tests and the cluster script's tests skip (220 passed, 9 skipped
 - **The real model** (`-m model`): the pinned name, 384-wide unit vectors, the query prefix, the input length, three
   obvious rankings; `tests/test_real_retrieval.py` ingests the real corpus with it and searches six hand-written
   questions in every mode (a smoke test). They skip without the `embed` extra, except in CI's model job.
+
+- **Answers** (day 3): the provider interface (`tests/test_llm.py`: request keys, recordings replayed and refused when
+  edited or unreadable, the recorder, the live provider's request and failures with a fake client, and the real
+  `anthropic` SDK against a local stand-in for the API, so the request on the wire is checked without a key); the
+  citation check (`tests/test_citations.py`: one test per rule and reason, and Hypothesis: no JSON value makes it raise
+  anything but MalformedAnswer, and any quote taken from a passage checks out with the span it came from); sentences
+  and the extractive answer (`tests/test_extractive.py`, with a chunk inside a split code block and Hypothesis over
+  generated Markdown); the reranker (`tests/test_rerank.py`, the real cross-encoder's rankings and pinned length under
+  `-m model`); `answer` and `ask` with every fallback (`tests/test_answer.py`); the API through a test client
+  (`tests/test_api.py`: answers, a replayed recording, search, health, every 422 and 503); `recall ask` and `recall
+  serve` (`tests/test_cli_ask.py`); and on the real corpus, the reranked smoke questions and that every answer cites
+  spans of its own pages.
 
 CI (GitHub Actions) has four jobs: lint, types and tests against a `pgvector/pgvector:pg17` service container; the
 corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests; the pg-script
@@ -308,6 +381,19 @@ so its "exact at 100" was the planner's sequential scan; the floor I had raised 
 - **A hash embedder for tests.** Deterministic and dependency-free, so database and retrieval tests predict rankings
   exactly and CI's main job needs no PyTorch; the real model has its own CI job.
 
+- **Rerank only the top of the fused list** (day 3). A cross-encoder reads each question-passage pair, one model pass
+  each: too slow for 1,503 passages a question, fine for 20. It can only reorder what retrieval found.
+- **Citations are quotes, checked against the passages.** The model cites a passage number and copies a quote; the
+  quote must be in that passage. The check is cheap, exact and the same for any model, and it turns each citation
+  into a span of the page. Claude's own citations feature would give spans too, but can't be combined with structured
+  output, and a recorded or other provider needs the same check anyway.
+- **Recorded by default, extractive as the fallback.** Tests, CI and anyone without a key get deterministic answers;
+  a failed or unusable model answer still gives an answer whose every claim is a span, with the reason the model's
+  wasn't used. When the model says the passages don't answer, there is no answer: extractive sentences would look
+  like one.
+- **The API runs model calls one at a time.** Simple, and safe with a fast tokenizer shared by threads; the CPU is
+  the limit either way. A pool of four connections serves the requests.
+
 ## Limitations
 
 - The Markdown scanner is not CommonMark: fences may be indented any amount (FastAPI indents fences in lists),
@@ -325,7 +411,16 @@ so its "exact at 100" was the planner's sequential scan; the floor I had raised 
 - An iterative HNSW scan gives up after 20,000 visited entries, dead ones included: ingest vacuums after a
   change (on an autocommit connection; a failure is only a warning), but rows deleted some other way, or kept
   visible by a long transaction elsewhere, count until autovacuum.
-- `recall search` loads the model for every command (seconds); day 3's API keeps it loaded.
+- `recall search` and `recall ask` load the models for every command (seconds); `recall serve` keeps them loaded.
+- No answer here has been written by an LLM: there is no key on this machine, so `recordings/` is empty and every
+  answer is extractive. The live provider is tested against a local stand-in for Anthropic's API, not against Claude.
+- The citation check shows where a claim came from, not that the claim follows from the quote (day 4 measures
+  faithfulness). A quote is found at its first occurrence in the passage.
+- Extractive answers are the passages' own sentences, chosen one by one and listed best first: correct spans, but not
+  prose, and a sentence that only makes sense after the one before it can be chosen alone.
+- Sentence splitting is a few rules (end punctuation, a handful of abbreviations), not a trained splitter.
+- Reranking reorders hybrid's top 20 only: a page retrieval ranks lower can't be recovered.
+- The API serializes model calls, so its throughput is one embed-and-rerank at a time.
 - Ingest embeds inside its one transaction: a first ingest holds it for about 40 s on a laptop CPU.
 - The local cluster uses trust authentication on localhost; it is for development only.
 - `<!-- c --># Title` is a heading after normalization (CommonMark would make the whole line an HTML block), and
