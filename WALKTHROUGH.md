@@ -1,8 +1,8 @@
 # Walkthrough
 
 Questions an interviewer is likely to ask about Recall, with short answers grounded in the code. Day 1 covers the
-corpus, normalization, chunking, storage and ingest; day 2 embeddings and retrieval; later days add their own
-sections.
+corpus, normalization, chunking, storage and ingest; day 2 embeddings and retrieval; day 3 reranking, answers with
+citations and the API; later days add their own sections.
 
 ## The project
 
@@ -23,6 +23,13 @@ Retrieval. Chunks are embedded with a small local model (`embedding.py`) inside 
 pgvector with an HNSW index; a generated, weighted `tsvector` gives full-text search (`migrations/002_retrieval.sql`);
 `retrieval.py` has full-text, vector and hybrid retrieval, the last fusing the other two by reciprocal rank fusion in
 one SQL query; `recall search` runs them; a CI job runs the real model on the real corpus.
+
+**What did day 3 build?**
+Answers. Hybrid's top 20 are reranked by a small cross-encoder (`rerank.py`); the top 5 go to an LLM provider
+(`llm.py`: recorded responses by default, Claude only when `RECALL_LLM=anthropic`), whose JSON answer is checked
+claim by claim (`citations.py`: every quote must be in the passage it cites); if no model answers usably, the answer is
+the passages' best sentences (`extractive.py`). `answer.py` ties it together, `api.py` serves it (`POST /ask`), and
+`recall ask` / `recall serve` run it.
 
 ## The corpus
 
@@ -291,6 +298,101 @@ Mutating the SQL (the wrong rank in one term, the tie order) fails it.
 **Why the 1 / (60 + rank) constant?**
 k = 60 comes from the paper that introduced RRF (Cormack, Clarke and Buettcher, 2009); it keeps rank 1 from
 dominating. It and the 50 candidates are defaults, not tuned; day 4's eval is where they get measured.
+
+## Reranking (day 3)
+
+**Why rerank at all, when you already fuse two retrievers?**
+Both retrievers look at the question and each passage separately: one vector each, or word matches. A cross-encoder
+reads the two together, so it can see that a passage answers the question rather than merely sharing its words. On the
+smoke questions it moved query-params.md from hybrid's 4th to 1st and handling-errors.md from outside the top 10 to
+5th (`tests/test_real_retrieval.py`).
+
+**Why only the top 20?**
+Each pair is one pass of the model. For 1,503 passages a question that's far too slow; for 20 it's a few hundred
+milliseconds on this laptop. The cost is that it can only reorder what hybrid found: background-tasks.md isn't in
+hybrid's top 20 for "How can I run a function after returning the response?", so reranking can't help. Day 4
+measures the depth.
+
+**Which model, and does the input fit?**
+`cross-encoder/ms-marco-MiniLM-L6-v2` (Apache-2.0, 91 MB), pinned to a revision like the embedder. It reads question
+and passage as one 512-token sequence, so I counted pairs with its own tokenizer (`scripts/token_fit.py --reranker
+--question ...`): 1 to 3 of 1,503 passages go over, 0.2% at most for a 24-word question; those lose their end.
+
+**How is it tested without the model?**
+`OverlapReranker` scores the share of the question's words in the text, so tests know the order exactly; `rerank`'s
+own logic (best first, ties keep retrieval order, a wrong number of scores or a NaN refused) is tested with a reranker
+that returns fixed scores. The real model has three obvious rankings and a check that the pinned `max_length` is
+applied (a 16-token spec scores two passages that differ only past 16 tokens the same).
+
+## Answers and citations (day 3)
+
+**How does an answer get written?**
+`answer.answer` numbers the top 5 passages, sends them and the question to the provider, and checks the JSON it gets
+back. If the provider fails, the response isn't an answer, or no claim's citation checks out, it falls back to the
+extractive answer and lists why in `problems`. If the model says the passages don't answer the question, there is no
+answer at all.
+
+**What makes a citation count?**
+Its passage number must be one of those given (an `int`, checked with `type()` because `True` is an int in Python and
+`2.0` isn't a passage) and its quote must be in that passage's text, exactly or with whitespace re-wrapped (models
+change a newline into a space). At least 8 non-space characters, because one word matches almost anything. A citation
+that counts becomes an exact span of the page: `document[start:end]` is the text the quote matched
+(`test_every_quote_taken_from_a_passage_checks_out`). Claims without a citation that counts are dropped.
+
+**Does that prove the answer is right?**
+No. It proves every claim points at real text in a retrieved passage, so a reader can check it, and that the model
+can't cite something it wasn't given. Whether the claim follows from the quote is faithfulness, which day 4 measures.
+
+**Why not use Claude's own citations feature?**
+It returns spans too, but it can't be combined with structured output, and the answer has to be checked the same way
+whatever wrote it: a recording, another model, or a future provider. A substring check is simple, exact and
+model-independent.
+
+**There's no API key here. How is the live provider tested?**
+Two ways, neither calling Claude. A fake client checks what `AnthropicProvider` asks for and how it treats a refusal
+(`stop_reason: "refusal"`) and a truncated answer (`max_tokens`). And the real `anthropic` SDK is pointed at a local
+HTTP server standing in for the API, so the request on the wire is checked: structured output with the answer's
+schema, `fallbacks: "default"` with its beta header, the prompt (`test_the_real_sdk_sends_the_request_this_provider_means`).
+What I haven't measured is how well Claude answers; that needs a key and is opt-in.
+
+**What is a recording?**
+A JSON file named after the SHA-256 of the request (system prompt, prompt and schema, canonical JSON), holding the
+request and the response. The recorded provider replays it only if the stored request still hashes to the name, so an
+edited recording is refused. Any change to the prompt or the passages is a different key, so a stale recording is
+never replayed for the wrong question. Hand-written test recordings say `"model": "hand-written"`.
+
+**How does the extractive answer pick sentences?**
+It splits the passages into prose sentences (outside fenced code, no headings, list markers dropped; a sentence ends at
+`.`, `!` or `?` and whitespace, except after `e.g.` and a few others), drops those under four words, scores them all
+with the reranker against the question, and keeps the best three, each citing its own span.
+
+**What went wrong with sentences and code?**
+A code block longer than a chunk is split across chunks, so a chunk can start in the middle of one. Read alone, its
+code lines are prose and its closing fence looks like an opening one, hiding the prose after it. I noticed a "sentence"
+made of Python while spot-checking real chunks. `ask` now reads each passage's page, and sentences are found there;
+129 of 1,503 real chunks changed (`test_a_chunk_that_starts_inside_a_code_block_is_read_in_its_document`).
+
+## The API (day 3)
+
+**How is the API built?**
+FastAPI with plain (sync) handlers, which it runs on its thread pool. The models load once in the app's lifespan; a
+psycopg pool of up to four autocommit connections serves requests, each holding one for its length. `create_app` takes
+a factory for its services, so tests pass the hash embedder, the overlap reranker and a pool into a test schema.
+
+**Why run model calls one at a time?**
+A Hugging Face fast tokenizer sets its truncation and padding on every call, and two threads doing that at once can fail
+("Already borrowed"); and the CPU is shared by the calls anyway. One lock around embedding and reranking is the simple
+safe choice; database work still runs in parallel.
+
+**What status codes can it return?**
+200; 422 for a bad request (an empty, blank or 2,001-character question, sizes out of bounds, passages above depth when
+reranking, unknown fields); 503 when there's no database, no corpus, an old schema, or vectors from another model,
+with a message that never includes the URL or the server's error text (either can hold a password).
+
+**What bug did the API tests find?**
+A question holding a lone surrogate (`"\ud800"` in JSON) is rejected by validation, but FastAPI's own 422 handler
+echoes the input back, and that string can't be encoded as UTF-8, so the 422 became a 500. A custom handler returns
+where and why without the input (`test_a_question_with_a_lone_surrogate_is_a_422_not_a_500`).
 
 ## The reviews
 
