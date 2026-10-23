@@ -137,7 +137,8 @@ def ask(
 ) -> tuple[Answer, Timings]:
     """Retrieve `depth` chunks (or `passages`, without the reranker), rerank them, and answer from the top `passages`.
     Raises what retrieval.search raises (a model mismatch, a bad size, a database error)."""
-    if not 1 <= passages <= depth:
+    if passages < 1 or (use_reranker and passages > depth):
+        # depth is how many are reranked, so without the reranker it doesn't bound passages.
         raise ValueError(f"passages must be from 1 to depth ({depth}), not {passages}")
     timings = Timings()
     t = time.perf_counter()

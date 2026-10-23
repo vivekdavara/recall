@@ -102,6 +102,18 @@ class CrossEncoderReranker:
         return [float(s) for s in scores]
 
 
+RERANKERS = ("model", "overlap")
+
+
+def make_reranker(kind: str) -> Reranker:
+    """`model` is the pinned cross-encoder (the `embed` extra); `overlap` the dependency-free stub."""
+    if kind == "overlap":
+        return OverlapReranker()
+    if kind != "model":
+        raise ValueError(f"unknown reranker {kind!r}: use one of {', '.join(RERANKERS)}")
+    return CrossEncoderReranker()
+
+
 @dataclass(frozen=True)
 class Reranked:
     hit: Hit

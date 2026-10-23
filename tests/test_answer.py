@@ -194,6 +194,9 @@ def test_ask_checks_its_sizes(conn: psycopg.Connection):
         ask(conn, "q", HashEmbedder(), OverlapReranker(), None, passages=6, depth=5)
     with pytest.raises(ValueError, match="passages must be from 1 to depth"):
         ask(conn, "q", HashEmbedder(), OverlapReranker(), None, passages=0)
+    load(conn)
+    result, _ = ask(conn, "q", HashEmbedder(), OverlapReranker(), None, passages=6, depth=5, use_reranker=False)
+    assert len(result.passages) == 6
 
 
 def test_load_documents_reads_the_pages_asked_for(conn: psycopg.Connection):
