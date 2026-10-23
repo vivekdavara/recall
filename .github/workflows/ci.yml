@@ -34,7 +34,8 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install
-        run: pip install -e '.[dev]'
+        # The API (FastAPI) and the live provider's SDK, so their tests run; no model and no key.
+        run: pip install -e '.[dev,api,llm]'
       - name: Lint
         run: |
           ruff check .
@@ -100,7 +101,8 @@ jobs:
         run: pytest tests/test_pg_script.py
 
   model:
-    # The real embedding model (bge-small-en-v1.5 on the CPU) on the real corpus: ingest it, search it in every mode.
+    # The real models (bge-small-en-v1.5 and the MiniLM cross-encoder, on the CPU) on the real corpus: ingest it,
+    # search it in every mode, rerank, answer.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
@@ -131,12 +133,13 @@ jobs:
       - name: Install (CPU-only PyTorch; the default Linux wheel brings CUDA)
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e '.[dev,embed]'
-      - name: Cache the model
+          pip install -e '.[dev,embed,api]'
+      - name: Cache the models
         uses: actions/cache@v6
         with:
           path: ~/.cache/huggingface
-          key: hf-${{ hashFiles('src/recall/embedding.py') }}
+          # The embedder's and the reranker's pinned revisions live in these two files.
+          key: hf-${{ hashFiles('src/recall/embedding.py', 'src/recall/rerank.py') }}
       - name: Fetch the pinned corpus
         run: recall fetch
       - name: Model tests (unit, then the real corpus)
@@ -146,8 +149,10 @@ jobs:
         shell: bash
         run: |
           {
-            echo '### Chunks counted in model tokens (scripts/token_fit.py)'
+            echo '### Chunks counted in model tokens: the embedder, then the reranker (scripts/token_fit.py)'
             echo '```'
             python scripts/token_fit.py
+            echo
+            python scripts/token_fit.py --reranker --question "How do I declare a query parameter with a default value?"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
