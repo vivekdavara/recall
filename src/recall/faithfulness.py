@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import psycopg
 
 from recall.answer import Answer, ask
-from recall.citations import Claim, find_quote
+from recall.citations import Claim
 from recall.embedding import Embedder
 from recall.evaluation import Question
 from recall.llm import Provider
@@ -39,11 +39,23 @@ STOP_WORDS = frozenset(
 
 _WORD = re.compile(r"\w+")
 _CODE_SPAN = re.compile(r"`([^`\n]+)`")
-# A number with thousands separators is one token ("1,500", not "1" and "500": the day-4 review), else a word with
-# any dots or dashes inside it.
-_TOKEN = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\w+(?:[.\-]\w+)*")
+# A number with thousands separators is one token, with any unit glued on ("1,500", "1,024MB": the day-4 reviews),
+# else a word with any dots or dashes inside it.
+_TOKEN = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?\w*|\w+(?:[.\-]\w+)*")
 # Single letters with dots between them (e.g, i.e, U.S): abbreviations, not names.
 _ABBREVIATION = re.compile(r"(?:[A-Za-z]\.)+[A-Za-z]")
+
+
+def find_term(term: str, text: str) -> bool:
+    """Whether an exact term is in `text` as written (any run of whitespace standing for any other), as a whole word
+    and a whole number: "500" isn't in "1,500" and "10" isn't in "10.5" (the day-4 second review), where a word
+    boundary alone would find them, since "," and "." aren't word characters."""
+    words = term.split()
+    if not words:
+        return True
+    before = r"(?<!\w)(?<!\d[.,])" if re.match(r"\w", term[0]) else ""
+    after = r"(?!\w)(?![.,]\d)" if re.match(r"\w", term[-1]) else ""
+    return re.search(before + r"\s+".join(re.escape(w) for w in words) + after, text) is not None
 
 
 def _stem(word: str) -> str:
@@ -94,7 +106,7 @@ def check_claim(claim: Claim, passages: Sequence[Hit]) -> ClaimCheck:
     found = content_words(cited)
     unsupported = sorted(words - found)
     support = 1.0 if not words else (len(words) - len(unsupported)) / len(words)
-    missing = sorted(t for t in exact_terms(claim.text) if find_quote(t, cited) is None)
+    missing = sorted(t for t in exact_terms(claim.text) if not find_term(t, cited))
     return ClaimCheck(claim.text, support, tuple(unsupported), tuple(missing))
 
 
