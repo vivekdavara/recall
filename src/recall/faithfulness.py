@@ -39,7 +39,11 @@ STOP_WORDS = frozenset(
 
 _WORD = re.compile(r"\w+")
 _CODE_SPAN = re.compile(r"`([^`\n]+)`")
-_TOKEN = re.compile(r"\w+(?:[.\-]\w+)*")
+# A number with thousands separators is one token ("1,500", not "1" and "500": the day-4 review), else a word with
+# any dots or dashes inside it.
+_TOKEN = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\w+(?:[.\-]\w+)*")
+# Single letters with dots between them (e.g, i.e, U.S): abbreviations, not names.
+_ABBREVIATION = re.compile(r"(?:[A-Za-z]\.)+[A-Za-z]")
 
 
 def _stem(word: str) -> str:
@@ -53,10 +57,13 @@ def content_words(text: str) -> set[str]:
 
 def exact_terms(text: str) -> set[str]:
     """What a claim must not change: code spans (`...`), and words with a digit, an underscore, a dot or dash inside,
-    or a capital letter after the first (numbers, versions, snake_case, dotted names, CamelCase, HTTPException)."""
+    or a capital letter after the first (numbers, "1,500" whole, versions, snake_case, dotted names, hyphenated words,
+    CamelCase, acronyms such as JSON). Abbreviations like "e.g." are not terms."""
     terms = {m.group(1).strip() for m in _CODE_SPAN.finditer(text) if m.group(1).strip()}
     outside = _CODE_SPAN.sub(" ", text)
     for token in _TOKEN.findall(outside):
+        if _ABBREVIATION.fullmatch(token):
+            continue
         if (
             any(c.isdigit() for c in token)
             or "_" in token

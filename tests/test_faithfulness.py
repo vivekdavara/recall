@@ -142,3 +142,32 @@ def test_answer_all_answers_and_checks_every_question(conn: psycopg.Connection):
     # The extractive answer is the passages' own sentences, so every claim is supported by construction.
     assert all(cl.supported for c in checks for cl in c.claims)
     assert checks[0].cites_gold and checks[0].gold_in_passages
+
+
+def test_dotted_and_hyphenated_words_are_terms_and_abbreviations_arent():
+    assert exact_terms("Set max-age and call app.get, e.g. for 1,500 items (i.e. most).") == {
+        "max-age",
+        "app.get",
+        "1,500",
+    }
+
+
+def test_a_term_must_be_found_as_a_whole_word():
+    passage = [hit(1, "Requires Python 3.10 or later.")]
+    assert check_claim(claim("Requires Python 3.1 or later.", 1), passage).missing_terms == ("3.1",)
+
+
+def test_a_short_word_ending_in_s_keeps_its_s():
+    assert content_words("yes") == {"yes"} and content_words("defaults") == {"default"}
+
+
+@pytest.mark.parametrize(
+    ("text", "supported"),
+    [
+        ("alpha beta gamma delta", True),  # 3 of 4 content words in the passage: 0.75, the threshold
+        ("alpha beta gamma delta epsilon", False),  # 3 of 5: 0.6
+    ],
+)
+def test_support_is_the_share_of_content_words_against_the_threshold(text: str, supported: bool):
+    check = check_claim(claim(text, 1), [hit(1, "alpha beta gamma")])
+    assert check.supported is supported
