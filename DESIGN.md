@@ -417,7 +417,8 @@ question's rank in every system, so a change can be traced to the questions it m
 **Faithfulness** (`--answers`). Every question is answered as `recall ask` answers it (hybrid, reranked, 5 passages, the
 provider `RECALL_LLM` names), and each claim is checked against the passages it cites: at least 75% of its distinct
 content words (stop words dropped, a plural `s` stripped) must be in them, and every exact term must be found as
-written, as a whole word (code spans; numbers, "1,500" as one; words with an underscore, a dot or a dash inside;
+written, as a whole word and a whole number ("500" isn't in "1,500" or "-500") (code spans; numbers, "1,500" and
+"-5" as one; words with an underscore, a dot or a dash inside;
 words with a capital after the first letter, so CamelCase and acronyms like JSON; not abbreviations like "e.g.").
 Acronym plurals ("APIs" against "API") and hyphenated English ("built-in") are terms too, so a faithful paraphrase
 can fail on them. That catches a claim that

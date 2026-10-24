@@ -529,7 +529,8 @@ touch a quote counted as gold. Each now fails a test; one survivor was redundant
 Yes, again. A second review of only the fixes found two in my fix of the faithfulness terms: making "1,500" one term
 cut "1,024MB" into a number and a unit, so a claim copying its passage word for word failed; and the passage side still
 found "500" inside "1,500", because a word boundary treats "," and "." as boundaries. The fix looks for terms as whole
-numbers too (`find_term`). Every multi-round review in this portfolio has found bugs in the previous round's fixes, so
+numbers too (`find_term`), and a third review found that fix too broad: its number guard refused `OAuth2` after
+`security.oauth2.`, since it applied to letters as well as digits. Every multi-round review in this portfolio has found bugs in the previous round's fixes, so
 I ask the second reviewer explicitly what each fix broke.
 
 **What would you do differently?**

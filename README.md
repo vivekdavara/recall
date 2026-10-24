@@ -459,6 +459,11 @@ the passage ("500" in "1,500", "10" in "10.5"), so a claim turning 1,500 into 50
 the tests green; 12 fail a test now (`64fab9c`), and the 13th (the empty-baseline check) is equivalent to the
 missing-system rule.
 
+A third agent reviewed only that fix (at `64fab9c`, 10 minutes) and found it too broad: the guard against continuing a
+number across "," or "." applied to every word edge, so `OAuth2` wasn't found in `fastapi.security.oauth2.OAuth2` (a
+real corpus sentence); and a minus sign was ignored ("-5" was the term "5"). Both fixed in `2e7337b`
+(`tests/review_d4c/`, 5 cases), with a table of found and not-found terms that kills its 12 listed mutants.
+
 ## Design decisions
 
 - **FastAPI's docs as the corpus.** MIT-licensed, one subject, many near-duplicate passages that differ in detail, and
