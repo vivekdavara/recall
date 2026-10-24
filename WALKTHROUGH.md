@@ -376,7 +376,9 @@ made of Python while spot-checking real chunks. `ask` now reads each passage's p
 
 **How is the API built?**
 FastAPI with plain (sync) handlers, which it runs on its thread pool. The models load once in the app's lifespan; a
-psycopg pool of up to four autocommit connections serves requests, each holding one for its length. `create_app` takes
+psycopg pool of up to four autocommit connections serves requests, each holding one only for its database work: the
+question is embedded before, and the reranker and the LLM run after the connection is back (day 4's fix of a day-3
+review finding: four slow answers used to hold all four connections, and /search and /healthz got 503s meanwhile). `create_app` takes
 a factory for its services, so tests pass the hash embedder, the overlap reranker and a pool into a test schema.
 
 **Why run model calls one at a time?**
@@ -394,6 +396,65 @@ with a message that never includes the URL or the server's error text (either ca
 A question holding a lone surrogate (`"\ud800"` in JSON) is rejected by validation, but FastAPI's own 422 handler
 echoes the input back, and that string can't be encoded as UTF-8, so the 422 became a 500. A custom handler returns
 where and why without the input (`test_a_question_with_a_lone_surrogate_is_a_422_not_a_500`).
+
+## Evaluation (day 4)
+
+**How do you know retrieval works?**
+`recall eval` runs 110 labelled questions through five systems (full-text, vector, hybrid, and the vector and hybrid
+lists reranked) and reports recall@k (the share of questions with a gold chunk in the top k) and MRR over the top 20,
+overall and per kind of question. CI's model job runs it on the real corpus with the real models and fails if any
+system drops by more than one question's worth below the committed `eval/baseline.json`.
+
+**Where did the questions come from?**
+A Claude agent wrote them from the pages, read through `recall show`, with no access to the retrievers, their code or
+their output, so none was picked or worded by what the system finds. Half name an identifier from the answer, half are
+paraphrases that avoid the answer's distinctive words. They are synthetic and say so everywhere; they compare the
+retrievers on this corpus, they don't predict what users would see. I read a sample and checked every gold quote
+mechanically (it must occur exactly once in its page).
+
+**Why are the labels quotes rather than chunk ids?**
+Chunk ids change on every re-ingest and chunk boundaries change with the chunker. A quote of the answer's text is
+resolved to whichever chunks overlap it when the evaluation runs (`gold_chunks`), so the labels survive re-chunking,
+and a quote that is no longer in its page exactly once fails the run instead of silently scoring zero.
+
+**What did it find?**
+That my default is not the best pipeline. Vector search alone beats hybrid at every k (recall@10 0.727 vs 0.591; 15
+questions only vector finds, none only hybrid finds, sign test p = 0.0001). Full-text search finds a gold chunk in its
+top 10 for only 34% of questions, 62% even of the identifier ones, because ts_rank_cd has no IDF and the query ORs every
+word, and RRF pulls its poor matches into the fused list. The reranker recovers some of it at rank 1 for hybrid, not
+for vector.
+
+**So why is hybrid still the default?**
+Because the sweep of the fusion settings (`scripts/sweep_fusion.py`) says the fault is the full-text list, not the
+fusion: no RRF k or candidate count beats vector alone on either half of the questions. Swapping the default to vector
+on 110 synthetic questions, half of them written to defeat keyword search, would be tuning to the test. Day 5 measures
+IDF weighting for full-text first, then picks the default from the ablation.
+
+**Why a sign test?**
+110 questions are few. Two systems' recall differs only by the questions one finds and the other misses; the exact sign
+test asks how likely that split is if each such question were a coin flip. 15 to 0 is not chance; the reranker's 11 to
+7 on vector at rank 1 could be.
+
+**How did you avoid tuning on the test set?**
+The sweep scores the odd-numbered and even-numbered questions separately: a setting picked on one half has to hold on
+the other. Here the conclusion (lower k helps hybrid, nothing beats vector) held on both, and I changed no default.
+
+**What does "faithfulness" mean here?**
+For each claim, at least 75% of its content words must be in the passages it cites, and every exact term (numbers, code
+spans, snake_case, CamelCase, dotted names) must appear there as written. It catches a wrong default or an invented
+parameter. It can't catch a claim that negates its passage in the passage's own words; a test pins that limit.
+
+**Your faithfulness score is 100%. Isn't that meaningless?**
+On this machine, yes, and the README says so: with no recordings and no key every answer is extractive, and extractive
+claims are the passages' own sentences. The run still checks the harness end to end, and the numbers that do mean
+something are that 55.5% of answers were written from passages including a gold chunk and 50% cite one. With a key,
+`RECALL_LLM=anthropic RECALL_RECORD=1 recall eval --answers` records model answers once and CI replays them.
+
+**Can the gate pass a regression?**
+A drop of one question per metric, by design: float differences between machines can move a near-tie. It refuses to
+compare results under other settings (the question file's SHA-256, the corpus commit, the chunker and chunk count, the
+models, depth, candidates, RRF k), so a change to any of those needs a new baseline committed with it, where a reviewer
+sees the numbers move.
 
 ## The reviews
 
