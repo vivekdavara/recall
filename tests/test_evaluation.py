@@ -23,6 +23,7 @@ from recall.evaluation import (
     Ranked,
     compare,
     gold_chunks,
+    index_settings,
     paired,
     paired_table,
     parse_questions,
@@ -258,3 +259,13 @@ def test_paired_counts_the_questions_only_one_system_finds():
         "|---|---:|---:|",
         "| x | 1 / 1 (p 1.000) | 1 / 1 (p 1.000) |",
     ]
+
+
+def test_a_database_with_no_corpus_has_no_settings_to_evaluate(conn: psycopg.Connection):
+    with pytest.raises(QuestionSetError, match="no corpus: run recall ingest"):
+        index_settings(conn)
+    load(conn)
+    settings = index_settings(conn)
+    count = conn.execute("SELECT count(*) FROM chunks").fetchone()
+    assert count is not None and settings["chunks"] == count[0] > 0
+    assert settings["max_tokens"] == 64 and settings["chunker_version"] >= 1 and len(settings["corpus_commit"]) == 40

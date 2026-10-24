@@ -263,3 +263,16 @@ def test_concurrent_writes_of_one_recording_dont_collide(tmp_path: Path):
     assert errors == []
     assert RecordedProvider(tmp_path).complete(REQUEST) == completion
     assert [p.name for p in tmp_path.iterdir()] == [f"{REQUEST.key()}.json"]
+
+
+def test_a_recording_that_cant_be_written_leaves_no_temporary_file(tmp_path: Path):
+    completion = Completion('{"a": "4"}', "model-x")
+    (tmp_path / f"{REQUEST.key()}.json").mkdir()  # the rename onto it fails
+    with pytest.raises(OSError):
+        llm.write_recording(tmp_path, REQUEST, completion, "live:test")
+    assert [p.name for p in tmp_path.iterdir()] == [f"{REQUEST.key()}.json"]
+
+
+def test_a_recording_is_readable_by_others(tmp_path: Path):
+    path = llm.write_recording(tmp_path, REQUEST, Completion('{"a": "4"}', "model-x"), "live:test")
+    assert path.stat().st_mode & 0o777 == 0o644  # not mkstemp's 0600
