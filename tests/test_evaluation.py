@@ -23,10 +23,13 @@ from recall.evaluation import (
     Ranked,
     compare,
     gold_chunks,
+    paired,
+    paired_table,
     parse_questions,
     rank_all,
     report,
     score,
+    sign_test,
     table,
 )
 from recall.rerank import OverlapReranker
@@ -225,3 +228,33 @@ def test_the_gate_fails_a_drop_of_two_questions_or_of_mrr():
 def test_the_gate_compares_only_the_same_questions_and_settings():
     (problem,) = compare(baseline(questions_sha256="def", embedder="other"), baseline())
     assert problem.startswith("the settings differ from the baseline's (embedder, questions_sha256)")
+
+
+def test_the_sign_test_by_hand():
+    assert sign_test(0, 0) == 1.0
+    assert sign_test(15, 0) == pytest.approx(2 / 2**15)
+    assert sign_test(5, 0) == 0.0625
+    assert sign_test(1, 1) == 1.0
+    assert sign_test(18, 5) == pytest.approx(0.0106, abs=5e-5)
+
+
+@given(st.integers(0, 60), st.integers(0, 60))
+def test_the_sign_test_is_symmetric_and_a_probability(a: int, b: int):
+    assert sign_test(a, b) == sign_test(b, a)
+    assert 0 < sign_test(a, b) <= 1
+
+
+def test_paired_counts_the_questions_only_one_system_finds():
+    ranks = {"x": {"q1": 1, "q2": 4, "q3": None, "q4": 2}, "y": {"q1": 3, "q2": 1, "q3": 2, "q4": None}}
+    one = paired(ranks, "x", "y", 1)
+    assert (one.a_only, one.b_only) == (1, 1) and one.p_value == 1.0
+    five = paired(ranks, "x", "y", 5)
+    assert (five.a_only, five.b_only) == (1, 1)  # q4 for x, q3 for y; q1 and q2 both
+    with pytest.raises(ValueError, match="same questions"):
+        paired({"x": {"q1": 1}, "y": {"q2": 1}}, "x", "y", 1)
+    table = paired_table(ranks, "y", ks=(1, 5))
+    assert table.splitlines() == [
+        "| system vs y | @1 | @5 |",
+        "|---|---:|---:|",
+        "| x | 1 / 1 (p 1.000) | 1 / 1 (p 1.000) |",
+    ]

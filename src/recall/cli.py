@@ -309,6 +309,10 @@ def cmd_eval(args: argparse.Namespace) -> int:
     for kind in evaluation.KINDS:
         print(f"\n{kind} questions:\n")
         print(evaluation.table({s: kinds[kind] for s, kinds in result.by_kind.items()}))
+    against = "hybrid+rerank" if "hybrid+rerank" in result.ranks else systems[0]
+    if len(result.ranks) > 1:
+        print(f"\nquestions found only by each system / only by {against}, and the sign test's p:\n")
+        print(evaluation.paired_table(result.ranks, against))
     body = result.to_json()
     if answers is not None:
         body["answers"] = answers.to_json()

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -299,6 +300,61 @@ def table(scores: Mapping[str, Scores], ks: Sequence[int] = KS) -> str:
         f"| {s} | {v.questions} | " + " | ".join(f"{v.recall[k]:.3f}" for k in ks) + f" | {v.mrr:.3f} |"
         for s, v in scores.items()
     ]
+    return "\n".join([head, rule, *rows])
+
+
+def sign_test(a_only: int, b_only: int) -> float:
+    """The exact two-sided sign test's p-value: how likely a split at least this uneven of the questions only one
+    system finds would be if each were as likely to fall either way."""
+    n = a_only + b_only
+    if n == 0:
+        return 1.0
+    tail = sum(math.comb(n, i) for i in range(min(a_only, b_only) + 1))
+    return min(1.0, 2 * tail / float(2**n))
+
+
+@dataclass(frozen=True)
+class Paired:
+    """Two systems on the same questions at one k: the questions only one of them finds in its top k."""
+
+    a: str
+    b: str
+    k: int
+    a_only: int
+    b_only: int
+
+    @property
+    def p_value(self) -> float:
+        return sign_test(self.a_only, self.b_only)
+
+
+def paired(ranks: Mapping[str, Mapping[str, int | None]], a: str, b: str, k: int) -> Paired:
+    """Compare two systems question by question (a report's ranks). Paired, because both answered the same
+    questions: a difference in recall@k is only the questions that one finds and the other misses."""
+
+    def found(system: str, qid: str) -> bool:
+        rank = ranks[system][qid]
+        return rank is not None and rank <= k
+
+    questions = list(ranks[a])
+    if set(questions) != set(ranks[b]):
+        raise ValueError(f"{a} and {b} weren't measured on the same questions")
+    a_only = sum(found(a, q) and not found(b, q) for q in questions)
+    b_only = sum(found(b, q) and not found(a, q) for q in questions)
+    return Paired(a, b, k, a_only, b_only)
+
+
+def paired_table(ranks: Mapping[str, Mapping[str, int | None]], against: str, ks: Sequence[int] = (1, 5, 10)) -> str:
+    """A Markdown table: every other system against `against`, at each k, as "found only by it / only by `against`
+    (the sign test's p)"."""
+    head = f"| system vs {against} | " + " | ".join(f"@{k}" for k in ks) + " |"
+    rule = "|---|" + "---:|" * len(ks)
+    rows = []
+    for system in ranks:
+        if system == against:
+            continue
+        cells = [paired(ranks, system, against, k) for k in ks]
+        rows.append(f"| {system} | " + " | ".join(f"{c.a_only} / {c.b_only} (p {c.p_value:.3f})" for c in cells) + " |")
     return "\n".join([head, rule, *rows])
 
 
