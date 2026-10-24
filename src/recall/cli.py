@@ -1,4 +1,5 @@
-"""The recall command: fetch and check the corpus, chunk it, load it into PostgreSQL, and search it."""
+"""The recall command: fetch and check the corpus, chunk it, load it into PostgreSQL, search it, answer from it,
+and measure retrieval on the labelled questions."""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from recall.corpus.fetch import CorpusError
 from recall.corpus.load import load
 from recall.corpus.normalize import NormalizeError
 from recall.embedding import DEFAULT_MODEL, Embedder, HashEmbedder, ModelUnavailable
+from recall.evaluation import QuestionSetError
 
 
 def data_dir() -> Path:
@@ -251,6 +254,67 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    from recall import evaluation
+    from recall.rerank import make_reranker
+
+    try:
+        questions = evaluation.load_questions(args.questions)
+        baseline = json.loads(args.check.read_text(encoding="utf-8")) if args.check else None
+    except (OSError, ValueError) as e:  # QuestionSetError is a ValueError, and so is bad JSON in the baseline
+        print(f"recall: {e}", file=sys.stderr)
+        return 1
+    systems = args.systems
+    embedder = None
+    if any(s != "full-text" for s in systems):
+        # As in search: check the stored vectors' model before loading one.
+        with db.connect() as conn:
+            retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
+        embedder = make_embedder(args.embedder)
+    reranker = make_reranker(args.reranker) if "hybrid+rerank" in systems else None
+    start = time.perf_counter()
+    with db.connect() as conn:
+        result = evaluation.evaluate(
+            conn,
+            questions,
+            evaluation.digest(args.questions),
+            embedder,
+            reranker,
+            systems,
+            candidates=args.candidates,
+            rrf_k=args.rrf_k,
+        )
+    seconds = time.perf_counter() - start
+    print(f"{len(questions)} questions ({args.questions}), {seconds:.1f} s\n")
+    print(evaluation.table(result.scores))
+    for kind in evaluation.KINDS:
+        print(f"\n{kind} questions:\n")
+        print(evaluation.table({s: kinds[kind] for s, kinds in result.by_kind.items()}))
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(result.to_json(), indent=2) + "\n", encoding="utf-8")
+        print(f"\nwrote {args.json}")
+    if baseline is not None:
+        problems = evaluation.compare(result.to_json(), baseline)
+        if problems:
+            print(f"\nworse than {args.check}:", file=sys.stderr)
+            for problem in problems:
+                print(f"  {problem}", file=sys.stderr)
+            return 1
+        print(f"\nno worse than {args.check}")
+    return 0
+
+
+def systems_list(text: str) -> list[str]:
+    from recall.evaluation import SYSTEMS
+
+    names = [s.strip() for s in text.split(",") if s.strip()]
+    unknown = [s for s in names if s not in SYSTEMS]
+    if not names or unknown:
+        raise argparse.ArgumentTypeError(f"use a comma-separated list of {', '.join(SYSTEMS)}")
+    return list(dict.fromkeys(names))
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -322,6 +386,26 @@ def parser() -> argparse.ArgumentParser:
         help="model: the pinned cross-encoder (default; $RECALL_RERANKER overrides); overlap: the stub",
     )
     a.set_defaults(run=cmd_ask)
+    e = sub.add_parser("eval", help="measure recall@k and MRR of each retrieval system on the labelled questions")
+    e.add_argument("--questions", type=Path, default=Path("eval/questions.jsonl"), help="(default %(default)s)")
+    e.add_argument(
+        "--systems",
+        type=systems_list,
+        default=["full-text", "vector", "hybrid", "hybrid+rerank"],
+        help="comma-separated (default: all four: full-text, vector, hybrid, hybrid+rerank)",
+    )
+    e.add_argument("--candidates", type=list_length, default=retrieval.DEFAULT_CANDIDATES, help="hybrid's lists")
+    e.add_argument("--rrf-k", type=int, default=retrieval.RRF_K, help="the k in 1 / (k + rank) (default %(default)s)")
+    e.add_argument("--json", type=Path, help="write the report (scores, settings, every rank) here")
+    e.add_argument("--check", type=Path, help="exit 1 if worse than this baseline (a report written by --json)")
+    add_embedder_option(e)
+    e.add_argument(
+        "--reranker",
+        choices=("model", "overlap"),
+        default=os.environ.get("RECALL_RERANKER", "model"),
+        help="model: the pinned cross-encoder (default; $RECALL_RERANKER overrides); overlap: the stub",
+    )
+    e.set_defaults(run=cmd_eval)
     serve = sub.add_parser("serve", help="run the HTTP API (POST /ask, POST /search, GET /healthz)")
     serve.add_argument("--host", default="127.0.0.1", help="the address to listen on (default %(default)s)")
     serve.add_argument("--port", type=positive, default=8109, help="(default %(default)s)")
@@ -362,7 +446,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         p.error(f"RECALL_RERANKER must be one of model, overlap, not {args.reranker!r}")
     try:
         code: int = args.run(args)
-    except (CorpusError, NormalizeError, ModelUnavailable, retrieval.ModelMismatch) as e:
+    except (CorpusError, NormalizeError, ModelUnavailable, retrieval.ModelMismatch, QuestionSetError) as e:
         print(f"recall: {e}", file=sys.stderr)
         return 1
     except (psycopg.OperationalError, db.BadDatabaseURL) as e:

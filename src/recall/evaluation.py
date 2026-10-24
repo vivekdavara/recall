@@ -249,6 +249,45 @@ def report(ranked: Mapping[System, Sequence[Ranked]], settings: Mapping[str, Any
     )
 
 
+def index_settings(conn: psycopg.Connection) -> dict[str, Any]:
+    """What the gold chunks and the rankings depend on in the database: the corpus, the chunker, the chunk count."""
+    with conn.transaction():
+        row = conn.execute(
+            "SELECT source_commit, chunker_version, max_tokens, (SELECT count(*) FROM chunks) FROM corpus_settings"
+        ).fetchone()
+    if row is None:
+        raise QuestionSetError("the database has no corpus: run recall ingest")
+    return {"corpus_commit": row[0], "chunker_version": row[1], "max_tokens": row[2], "chunks": row[3]}
+
+
+def evaluate(
+    conn: psycopg.Connection,
+    questions: Sequence[Question],
+    questions_sha256: str,
+    embedder: Embedder | None,
+    reranker: Reranker | None,
+    systems: Sequence[System] = SYSTEMS,
+    *,
+    candidates: int = retrieval.DEFAULT_CANDIDATES,
+    rrf_k: int = retrieval.RRF_K,
+) -> Report:
+    """Gold chunks, every system's rankings and their scores, with the settings a baseline must share."""
+    uses_vectors = any(s != "full-text" for s in systems)
+    settings = {
+        "questions_sha256": questions_sha256,
+        "questions": len(questions),
+        **index_settings(conn),
+        "embedder": embedder.name if embedder is not None and uses_vectors else None,
+        "reranker": reranker.name if reranker is not None and "hybrid+rerank" in systems else None,
+        "depth": DEPTH,
+        "candidates": candidates if "hybrid" in systems or "hybrid+rerank" in systems else None,
+        "rrf_k": rrf_k if "hybrid" in systems or "hybrid+rerank" in systems else None,
+    }
+    gold = gold_chunks(conn, questions)
+    ranked = rank_all(conn, questions, gold, embedder, reranker, systems, candidates=candidates, rrf_k=rrf_k)
+    return report(ranked, settings)
+
+
 def table(scores: Mapping[str, Scores], ks: Sequence[int] = KS) -> str:
     """A Markdown table: one row a system, recall@k for each k, then MRR."""
     head = "| system | n | " + " | ".join(f"recall@{k}" for k in ks) + f" | MRR@{DEPTH} |"
