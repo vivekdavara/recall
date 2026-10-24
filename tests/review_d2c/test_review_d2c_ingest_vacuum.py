@@ -38,7 +38,8 @@ def test_a_vacuum_that_cannot_get_its_lock_does_not_fail_a_committed_ingest(sche
     with connect_to(schema) as blocker, blocker.transaction():
         blocker.execute("LOCK TABLE chunks IN SHARE UPDATE EXCLUSIVE MODE")
         conn.execute("SET lock_timeout = '200ms'")
-        report = ingest(conn, DOCS, source_commit=COMMIT, max_tokens=16, embedder=HashEmbedder())
+        with pytest.warns(UserWarning, match="the ingest is committed, but VACUUM after it failed: .*lock timeout"):
+            report = ingest(conn, DOCS, source_commit=COMMIT, max_tokens=16, embedder=HashEmbedder())
     assert report.added == len(DOCS)
 
 
