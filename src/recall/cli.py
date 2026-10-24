@@ -256,6 +256,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
 
 def cmd_eval(args: argparse.Namespace) -> int:
     from recall import evaluation
+    from recall.answer import DEFAULT_PASSAGES
     from recall.rerank import make_reranker
 
     try:
@@ -264,14 +265,25 @@ def cmd_eval(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as e:  # QuestionSetError is a ValueError, and so is bad JSON in the baseline
         print(f"recall: {e}", file=sys.stderr)
         return 1
+    provider = None
+    provider_name = "no LLM"
+    if args.answers:
+        from recall.llm import ProviderError, provider_from_environment
+
+        try:
+            provider = provider_from_environment()
+        except (ValueError, ProviderError) as e:
+            print(f"recall: {e}", file=sys.stderr)
+            return 1
+        provider_name = f"provider {provider.name}" if provider is not None else "no LLM"
     systems = args.systems
     embedder = None
-    if any(s != "full-text" for s in systems):
+    if args.answers or any(s != "full-text" for s in systems):  # answers are hybrid, as ask's are
         # As in search: check the stored vectors' model before loading one.
         with db.connect() as conn:
             retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
         embedder = make_embedder(args.embedder)
-    reranker = make_reranker(args.reranker) if "hybrid+rerank" in systems else None
+    reranker = make_reranker(args.reranker) if args.answers or "hybrid+rerank" in systems else None
     start = time.perf_counter()
     with db.connect() as conn:
         result = evaluation.evaluate(
@@ -284,18 +296,36 @@ def cmd_eval(args: argparse.Namespace) -> int:
             candidates=args.candidates,
             rrf_k=args.rrf_k,
         )
+        answers = None
+        if args.answers:
+            from recall.faithfulness import answer_all, score_answers
+
+            assert reranker is not None
+            gold = evaluation.gold_chunks(conn, questions)
+            answers = score_answers(answer_all(conn, questions, gold, embedder, reranker, provider))
     seconds = time.perf_counter() - start
     print(f"{len(questions)} questions ({args.questions}), {seconds:.1f} s\n")
     print(evaluation.table(result.scores))
     for kind in evaluation.KINDS:
         print(f"\n{kind} questions:\n")
         print(evaluation.table({s: kinds[kind] for s, kinds in result.by_kind.items()}))
+    body = result.to_json()
+    if answers is not None:
+        body["answers"] = answers.to_json()
+        print(f"\nanswers (ask's defaults: hybrid, reranked, {DEFAULT_PASSAGES} passages; {provider_name}):\n")
+        print(
+            "| answers | methods | claims | supported claims | all claims supported | cites gold | gold in passages |\n"
+            "|---:|---|---:|---:|---:|---:|---:|\n"
+            f"| {answers.answers} | {', '.join(f'{k} {v}' for k, v in sorted(answers.methods.items()))}"
+            f" | {answers.claims} | {answers.supported_claims:.3f} | {answers.fully_supported:.3f}"
+            f" | {answers.cites_gold:.3f} | {answers.gold_in_passages:.3f} |"
+        )
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps(result.to_json(), indent=2) + "\n", encoding="utf-8")
+        args.json.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
         print(f"\nwrote {args.json}")
     if baseline is not None:
-        problems = evaluation.compare(result.to_json(), baseline)
+        problems = evaluation.compare(body, baseline)
         if problems:
             print(f"\nworse than {args.check}:", file=sys.stderr)
             for problem in problems:
@@ -398,6 +428,11 @@ def parser() -> argparse.ArgumentParser:
     e.add_argument("--rrf-k", type=int, default=retrieval.RRF_K, help="the k in 1 / (k + rank) (default %(default)s)")
     e.add_argument("--json", type=Path, help="write the report (scores, settings, every rank) here")
     e.add_argument("--check", type=Path, help="exit 1 if worse than this baseline (a report written by --json)")
+    e.add_argument(
+        "--answers",
+        action="store_true",
+        help="also answer every question as recall ask does ($RECALL_LLM) and check the answers' faithfulness",
+    )
     add_embedder_option(e)
     e.add_argument(
         "--reranker",

@@ -126,3 +126,29 @@ def test_unknown_systems_are_refused(questions: Path, capsys: pytest.CaptureFixt
     with pytest.raises(SystemExit):
         run(questions, "--systems", "full-text,bm25")
     assert "use a comma-separated list of full-text, vector, hybrid, hybrid+rerank" in capsys.readouterr().err
+
+
+def test_eval_answers_checks_faithfulness_and_reports_it(
+    corpus: str, questions: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("RECALL_LLM", "none")
+    report = tmp_path / "report.json"
+    assert run(questions, "--systems", "full-text", "--answers", "--json", str(report)) == 0
+    out = capsys.readouterr().out
+    assert "\nanswers (ask's defaults: hybrid, reranked, 5 passages; no LLM):\n" in out
+    assert "| 2 | extractive 2 | " in out
+    answers = json.loads(report.read_text())["answers"]
+    assert answers["answers"] == 2 and answers["methods"] == {"extractive": 2}
+    # The extractive answer is the passages' own sentences: every claim is supported by construction.
+    assert answers["supported_claims"] == 1.0 and answers["fully_supported"] == 1.0
+    # The answers aren't gated: a baseline without them still compares.
+    assert run(questions, "--systems", "full-text", "--answers", "--check", str(report)) == 0
+
+
+def test_eval_answers_with_a_provider_that_cant_load_is_one_line(
+    corpus: str, questions: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("RECALL_LLM", "nonsense")
+    assert run(questions, "--answers") == 1
+    err = capsys.readouterr().err
+    assert err.startswith("recall: ") and len(err.splitlines()) == 1
