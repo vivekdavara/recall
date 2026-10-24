@@ -332,7 +332,8 @@ copied word for word, and to say when they don't answer. It is deterministic, so
 **Citations** (`recall.citations.check`). The answer must be `{"answerable": bool, "claims": [{"text", "citations":
 [{"passage", "quote"}]}]}`. A citation counts only if its passage is one of those given (an integer from 1, not a
 boolean or a float) and its quote is in that passage's text: exactly, or with any run of whitespace standing for any
-other (models re-wrap what they copy). A quote must hold at least 8 characters besides whitespace, since one word
+other (models re-wrap what they copy), and a quote that starts or ends with a letter, digit or underscore must start or
+end a word there ("secure by default" is not in "insecure by default"). A quote must hold at least 8 characters besides whitespace, since one word
 would match almost any passage. A citation that counts carries the chunk, the page and the span: offsets into the
 page's normalized text, with `document[start:end]` the passage's own text that the quote matched. A claim with no
 citation that counts is dropped; at most 20 claims and 5 citations a claim are checked. Each drop is reported, with

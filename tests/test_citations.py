@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -165,6 +166,16 @@ def test_find_quote_prefers_the_exact_text_and_the_first_occurrence():
     assert find_quote("a.c", "abc") is None  # regex characters are literal
 
 
+def test_a_quote_must_start_and_end_where_words_do():
+    assert find_quote("secure by default", "insecure by default") is None
+    assert find_quote("secure by default", "insecure by defaults") is None
+    assert find_quote("secure by default", "insecure by default, secure by default.") == (21, 38)
+    assert find_quote("secure by\ndefault", "it is secure by default") == (6, 23)
+    # Punctuation at an end needs no word boundary: a quote may start or stop inside a token like (item_id).
+    assert find_quote("(item_id", "read_item(item_id)") == (9, 17)
+    assert find_quote("_id)", "read_item(item_id)") is None
+
+
 # Hypothesis: any response at all is checked without raising anything but MalformedAnswer, and every citation that
 # comes back is a span of its own passage.
 
@@ -205,6 +216,11 @@ def test_every_quote_taken_from_a_passage_checks_out(data: st.DataObject):
     text = PASSAGES[number - 1].content
     start = data.draw(st.integers(0, len(text) - 1))
     end = data.draw(st.integers(start + 1, len(text)))
+    # Widened to whole words: a quote that starts or ends inside a word doesn't count (the next test).
+    while start > 0 and re.fullmatch(r"\w\w", text[start - 1 : start + 1]):
+        start -= 1
+    while end < len(text) and re.fullmatch(r"\w\w", text[end - 1 : end + 1]):
+        end += 1
     quote = text[start:end]
     # Re-wrapped as a model might: every run of whitespace replaced by one space.
     if data.draw(st.booleans()):

@@ -89,16 +89,20 @@ def find_quote(quote: str, text: str) -> tuple[int, int] | None:
     """Where `quote` occurs in `text`: exactly, or else with any run of whitespace standing for any other.
 
     Models often re-wrap the text they copy (a newline becomes a space); that is still the passage's text. Anything
-    else (a changed word, different punctuation) is not found. The first occurrence counts.
+    else (a changed word, different punctuation) is not found. A quote that starts or ends with a word character
+    must start or end a word there too: "secure by default" isn't in "insecure by default" (the day-3 review). The
+    first occurrence counts.
     """
-    at = text.find(quote)
-    if at >= 0:
-        return at, at + len(quote)
     words = quote.split()
     if not words:
         return None
-    m = re.search(r"\s+".join(re.escape(w) for w in words), text)
-    return (m.start(), m.end()) if m else None
+    before = r"(?<!\w)" if re.match(r"\w", quote[0]) else ""
+    after = r"(?!\w)" if re.match(r"\w", quote[-1]) else ""
+    for body in (re.escape(quote), r"\s+".join(re.escape(w) for w in words)):
+        m = re.search(before + body + after, text)
+        if m:
+            return m.start(), m.end()
+    return None
 
 
 def check(response: str, passages: Sequence[Hit]) -> Checked:
