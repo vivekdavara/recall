@@ -19,6 +19,7 @@ from recall.faithfulness import (
     check_claim,
     content_words,
     exact_terms,
+    find_term,
     score_answers,
 )
 from recall.rerank import OverlapReranker
@@ -185,3 +186,29 @@ def test_support_is_the_share_of_content_words_against_the_threshold(text: str, 
 )
 def test_numbers_and_abbreviations_at_their_edges(text: str, terms: set[str]):
     assert exact_terms(text) == terms
+
+
+@pytest.mark.parametrize(
+    ("term", "text", "found"),
+    [
+        ("OAuth2", "from fastapi.security.oauth2.OAuth2 import it", True),  # a letter may follow "2."
+        (".json()", "data = response.json()", True),  # a punctuation edge needs no boundary
+        ("/items/", "GET http://127.0.0.1:8000/items/5?q=x", True),
+        ("Query(default=None, max_length=50)", "Query(default=None,\n    max_length=50)", True),  # re-wrapped
+        ("0.99.0", "FastAPI 0.99.0.urlstr", True),  # a dot before a letter isn't a decimal point
+        ("10", "range(a,10)", True),  # a comma after a letter isn't a thousands separator
+        ("10", "from 1-10", True),  # a range, not a minus sign
+        ("5", "the value 10.5", False),
+        ("500", "1500 rows", False),
+        ("Query()", "MyQuery()", False),
+        ("/items", 'path = "/items_list"', False),
+        ("5", "at least -5", False),
+        ("-5", "at least 5", False),
+    ],
+)
+def test_find_term_takes_whole_words_and_whole_numbers(term: str, text: str, found: bool):
+    assert find_term(term, text) is found
+
+
+def test_a_negative_number_is_one_term():
+    assert exact_terms("from -5 to 1-10") == {"-5", "1-10"}

@@ -39,22 +39,30 @@ STOP_WORDS = frozenset(
 
 _WORD = re.compile(r"\w+")
 _CODE_SPAN = re.compile(r"`([^`\n]+)`")
-# A number with thousands separators is one token, with any unit glued on ("1,500", "1,024MB": the day-4 reviews),
-# else a word with any dots or dashes inside it.
-_TOKEN = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?\w*|\w+(?:[.\-]\w+)*")
+# A negative number is one token with its sign ("-5", not "5"; but "1-10" is a range), a number with thousands
+# separators one token with any unit glued on ("1,500", "1,024MB"), else a word with any dots or dashes inside it
+# (the day-4 reviews).
+_TOKEN = re.compile(r"(?<![\w-])-\d+(?:\.\d+)?\w*|\d{1,3}(?:,\d{3})+(?:\.\d+)?\w*|\w+(?:[.\-]\w+)*")
 # Single letters with dots between them (e.g, i.e, U.S): abbreviations, not names.
 _ABBREVIATION = re.compile(r"(?:[A-Za-z]\.)+[A-Za-z]")
 
 
 def find_term(term: str, text: str) -> bool:
     """Whether an exact term is in `text` as written (any run of whitespace standing for any other), as a whole word
-    and a whole number: "500" isn't in "1,500" and "10" isn't in "10.5" (the day-4 second review), where a word
-    boundary alone would find them, since "," and "." aren't word characters."""
+    and a whole number: "500" isn't in "1,500", "10" isn't in "10.5" and "5" isn't in "-5" (the day-4 reviews), where
+    a word boundary alone would find them, since ",", "." and "-" aren't word characters."""
     words = term.split()
     if not words:
         return True
-    before = r"(?<!\w)(?<!\d[.,])" if re.match(r"\w", term[0]) else ""
-    after = r"(?!\w)(?![.,]\d)" if re.match(r"\w", term[-1]) else ""
+    # A word edge needs a word boundary. A digit edge also mustn't continue a number across "," or "." ("500" in
+    # "1,500"), or follow a minus sign ("5" in "-5"); a letter edge may follow "2." (OAuth2 in "security.oauth2.OAuth2":
+    # the day-4 third review found that guard on every word edge refused it).
+    before = r"(?<!\w)" if re.match(r"\w", term[0]) else r"(?<!\w)" if term[0] == "-" else ""
+    if term[0].isdigit():
+        before += r"(?<!\d[.,])(?<!(?<!\w)-)"
+    after = r"(?!\w)" if re.match(r"\w", term[-1]) else ""
+    if term[-1].isdigit():
+        after += r"(?![.,]\d)"
     return re.search(before + r"\s+".join(re.escape(w) for w in words) + after, text) is not None
 
 
