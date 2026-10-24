@@ -15,7 +15,7 @@ likely to ask.
 | 1 | Design; the corpus (fetched, checked, normalized); chunking; the schema and ingest; the local database; CI | done |
 | 2 | Local embeddings in pgvector (HNSW), full-text retrieval, hybrid by reciprocal rank fusion, `recall search` | done |
 | 3 | A cross-encoder reranker, answers with checked citations (recorded LLM provider, extractive fallback), the API, `recall ask` | done |
-| 4 | The eval harness: labelled questions with gold passages, recall@k, MRR, faithfulness; a CI gate | planned |
+| 4 | The eval harness: 110 labelled questions, recall@k and MRR per system, faithfulness checks, a CI gate | done |
 | 5 | The ablation table, results, v1.0.0 | planned |
 
 ## Why it is built this way
@@ -27,7 +27,7 @@ likely to ask.
 - **The corpus is reproducible.** The archive's bytes aren't pinned (GitHub regenerates archives); the commit id the
   archive declares and the SHA-256 of each of the 421 files used are, so anyone gets the same corpus or an error.
 - **Measured, not asserted.** Day 4's harness turns "hybrid retrieval is better" into recall@k and MRR per retriever,
-  and CI fails when they drop.
+  and CI fails when they drop. Its first run said hybrid is *not* better here (below).
 
 ## Architecture
 
@@ -45,7 +45,7 @@ flowchart LR
     C -->|none pass, or no model| XT[extractive: the best<br/>sentences, own spans]
     C --> API[POST /ask,<br/>recall ask]
     XT --> API
-    API -.->|day 4| H[eval harness<br/>recall@k, MRR]
+    API --> H[recall eval: 110 labelled questions<br/>recall@k, MRR, faithfulness, CI gate]
 ```
 
 ## Layout
@@ -66,7 +66,9 @@ src/recall/
   llm.py                  the LLM provider interface: recorded (default), Claude (opt-in), the recorder
   citations.py            the answer's JSON schema and the citation check (each quote in its passage, exact spans)
   extractive.py           sentences outside code, and the extractive answer (the reranker's best sentences)
-  answer.py               the prompt, answer() with its fallbacks, ask(): retrieve, rerank, answer
+  answer.py               the prompt, answer() with its fallbacks, ask(): retrieve() then respond()
+  evaluation.py           questions, gold chunks from quotes, five systems, recall@k, MRR, the gate, the sign test
+  faithfulness.py         claims checked against the passages they cite; answers that cite gold
   api.py                  the FastAPI app: POST /ask, POST /search, GET /healthz
   db.py                   connections, migrations, pgvector's text form
   migrations/             numbered SQL files
@@ -75,6 +77,9 @@ scripts/pg.sh             the project-local PostgreSQL 17 cluster (port 5544)
 scripts/token_fit.py      the chunks counted in the embedding model's own tokens
 scripts/measure_retrieval.py   HNSW against exact search, and each step's latency
 scripts/measure_answers.py     each answering step's latency, in-process or over HTTP
+scripts/sweep_fusion.py   hybrid across RRF k and candidates, on two halves of the questions
+eval/questions.jsonl      110 labelled questions (synthetic), each with gold quotes
+eval/baseline.json        the committed evaluation report that CI's gate compares with
 recordings/               recorded LLM responses (none yet: no key here; see its README)
 tests/                    unit, property (Hypothesis), database and real-corpus tests
 ```
@@ -96,6 +101,7 @@ scripts/pg.sh start            # the local cluster on port 5544: databases recal
 .venv/bin/recall ask "How do I upload a file?"   # retrieve, rerank, answer with citations (--json: what /ask returns)
 .venv/bin/recall serve                           # the API on 127.0.0.1:8109 (models load once, ~5 s)
 curl -s localhost:8109/ask -H 'content-type: application/json' -d '{"question": "How do I upload a file?"}'
+.venv/bin/recall eval --answers --check eval/baseline.json   # the evaluation and CI's gate (~2 minutes)
 make check                     # ruff, mypy --strict, and the tests (they use recall_test)
 scripts/pg.sh stop
 ```
@@ -232,9 +238,63 @@ cite the wrong pages, since retrieval found none of the right ones.
 **Sentences inside split code blocks.** Reading each passage in its page changed the sentences of 129 of the 1,503
 chunks (5,836 sentences of four words or more read alone, 5,496 read in their pages).
 
+## Results (day 4)
+
+Apple M3, macOS 26.6.2, Python 3.11.12, on battery (Low Power Mode off); the real corpus (1,503 chunks) and models.
+
+**The question set** (`eval/questions.jsonl`): 110 **synthetic** questions over 66 pages, written by a Claude agent
+from the pages alone (no access to the retrievers or their results), each with gold quotes from its page; 12 have a
+second page that also answers. 55 are *identifier* questions, naming a term from their answer (often in its own
+words, which favours full-text search), and 55 are *paraphrases* that avoid every distinctive term of their answer (on
+purpose hard for full-text search). It is one writer's questions about one documentation set, not users' questions.
+
+**Retrieval** (`.venv/bin/recall eval --answers --json eval/baseline.json` at `4ea760b`, 110.6 s; a second run gave the
+same numbers; recall@k is the share of questions with a gold chunk in the top k, MRR is over the top 20):
+
+| system | recall@1 | recall@3 | recall@5 | recall@10 | recall@20 | MRR@20 |
+|---|---:|---:|---:|---:|---:|---:|
+| full-text | 0.100 | 0.218 | 0.273 | 0.336 | 0.409 | 0.175 |
+| vector | 0.355 | **0.600** | **0.627** | **0.727** | **0.791** | **0.491** |
+| hybrid (RRF) | 0.264 | 0.382 | 0.473 | 0.591 | 0.718 | 0.357 |
+| vector + rerank | **0.391** | 0.545 | 0.573 | 0.682 | 0.791 | 0.487 |
+| hybrid + rerank (ask's default) | 0.382 | 0.518 | 0.555 | 0.645 | 0.718 | 0.469 |
+
+By kind, recall@10 (MRR@20): identifier questions: full-text 0.618 (0.335), vector 1.000 (0.732), hybrid 0.909
+(0.588), vector + rerank 0.964 (0.775), hybrid + rerank 0.982 (0.778); paraphrases: full-text 0.055 (0.016), vector
+0.455 (0.250), hybrid 0.273 (0.127), vector + rerank 0.400 (0.200), hybrid + rerank 0.309 (0.160).
+
+**What it says.** The default pipeline isn't the best one on this set. Vector search alone beats hybrid at every k, and
+hybrid + rerank (what `ask` does) from k = 3 up: at recall@10 it finds 15 questions hybrid misses and hybrid finds none
+it misses (exact sign test
+p = 0.0001; `recall eval` prints these paired counts for every system against the default). Full-text search is weak
+even on identifier questions (0.618 at 10), because ts_rank_cd has no inverse document frequency and the query ORs
+every word, so common words rank chunks that share them; fusing its list in pulls those chunks up. The reranker helps
+hybrid at the top (recall@1: 18 questions gained, 5 lost, p = 0.011) but doesn't change vector significantly (11 vs 7
+at 1, p = 0.48); on paraphrases it lowers vector's MRR (0.250 to 0.200): the MS MARCO cross-encoder leans on shared
+words too. Paraphrases are hard for everything: the best recall@10 is 0.455.
+
+**Fusion settings** (`.venv/bin/python scripts/sweep_fusion.py`, at `713a52a`): hybrid at candidates 20/50/100 and RRF
+k 1/10/30/60/120, scored on the odd-numbered and even-numbered questions separately, so a choice made on one half can be
+checked on the other. No setting beats vector alone on either half. A smaller k helps hybrid on both halves (MRR@20 at
+candidates 50: 0.468 / 0.384 at k = 1 against 0.420 / 0.295 at the default 60; vector alone 0.544 / 0.438), and more
+candidates hurt at k = 60. So the defaults stay for now: the problem is the full-text list, not the fusion, and day 5
+measures IDF weighting for it before choosing.
+
+**Answers** (the same run, `--answers`: each question answered as `recall ask` does, hybrid + rerank, 5 passages):
+all 110 answers are extractive (no recordings, no key), 330 claims, every one supported by the lexical check, which is
+true by construction for extractive claims (they are the passages' sentences): on this machine that number tests the
+harness, not a model. The informative ones: 55.5% of answers were written from passages that include a gold chunk (the
+same as hybrid + rerank's recall@5), and 50.0% cite one.
+
+**The gate.** CI's model job ingests the corpus, runs `recall eval --answers --check eval/baseline.json`, writes the
+tables to the run's summary and keeps the report as an artifact. It fails on a drop of more than one question's worth
+in any system's recall@k or 0.01 in MRR, or on different settings (a changed question file, corpus, chunker, model or
+fusion setting needs a new baseline committed with it).
+
 ## Tests
 
-`make check` runs ruff, `mypy --strict` and pytest: 248 tests at `20809ed`, all passing here (7.2 s). In CI's test job
+`make check` runs ruff, `mypy --strict` and pytest: 552 passed and 16 skipped at `713a52a` (30 s; the 16 are the
+real-model tests, run with `RECALL_REQUIRE_MODEL=1 pytest -m model`). In CI's test job
 the real-corpus tests and the cluster script's tests skip (220 passed, 9 skipped at `0777cfe`, line and branch coverage
 99%); the corpus and pg-script jobs run them.
 
@@ -279,11 +339,19 @@ the real-corpus tests and the cluster script's tests skip (220 passed, 9 skipped
   serve` (`tests/test_cli_ask.py`); and on the real corpus, the reranked smoke questions and that every answer cites
   spans of its own pages.
 
+- **Evaluation** (day 4, `tests/test_evaluation.py`, `tests/test_cli_eval.py`, `tests/test_faithfulness.py`): the
+  question file's rules; gold chunks from quotes (a quote across a chunk boundary, on two pages, in a heading, absent,
+  repeated); recall@k and MRR by hand, and Hypothesis (recall grows with k; MRR lies between recall@1 and recall@20);
+  every system on a small corpus (reranked lists are permutations); the sign test by hand and symmetric; the gate (the
+  same, one question's slack, a two-question drop, MRR, other settings); `recall eval`'s tables, report and exit codes;
+  faithfulness on hand-written claims (a wrong number, an invented parameter, unrelated words, citing the wrong passage,
+  and a negation that passes: the check's known limit).
+
 CI (GitHub Actions) has four jobs: lint, types and tests against a `pgvector/pgvector:pg17` service container; the
 corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests; the pg-script
 job, which installs PostgreSQL 17 and pgvector on Ubuntu and runs the cluster script's test; and the model job, which
 installs CPU-only PyTorch, caches the model, and runs the `model` tests on the real corpus, writing the token fit and
-the smoke questions' ranks to the run's summary.
+the smoke questions' ranks to the run's summary; then it ingests the corpus and runs the evaluation gate (day 4).
 
 ## Review of day 1
 
@@ -378,6 +446,14 @@ so its "exact at 100" was the planner's sequential scan; the floor I had raised 
   keeps identifiers like `response_model_exclude_unset` whole, which the parser splits.
 - **Reciprocal rank fusion, in one SQL query.** Ranks need no calibration between ts_rank_cd and cosine similarity; one
   query is one snapshot and one round trip. k = 60 and 50 candidates a list are the usual defaults; day 4 measures them.
+- **Labels are quotes, not chunk ids** (day 4). A gold quote is resolved to the chunks it overlaps when the evaluation
+  runs, so re-chunking doesn't invalidate the labels, and a quote that no longer occurs once in its page fails loudly.
+- **recall@k as "any gold chunk in the top k".** A question's gold items are alternative places that answer it, so
+  finding one is enough; MRR uses the first.
+- **Paired counts and a sign test next to the means** (day 4). 110 questions are few: two systems differ by the
+  questions one finds and the other misses, and the sign test says whether that split could be chance.
+- **The gate allows one question's worth.** Float differences between machines can move a near-tie in HNSW or
+  fusion; a real regression moves more than one of 110 questions.
 - **A hash embedder for tests.** Deterministic and dependency-free, so database and retrieval tests predict rankings
   exactly and CI's main job needs no PyTorch; the real model has its own CI job.
 
@@ -402,8 +478,13 @@ so its "exact at 100" was the planner's sequential scan; the floor I had raised 
 - Normalization is written for FastAPI's documentation build; another corpus needs its own rules.
 - The token measure approximates the embedding model's tokens; a code-heavy chunk can have more model tokens. One
   passage (a base64 PNG in a code block) is truncated by the model.
-- Full-text ranking is ts_rank_cd, which has no inverse document frequency: a question in common words ("run a function
-  after returning the response") can miss its page. Day 4 measures IDF weighting against it.
+- Full-text ranking is ts_rank_cd, which has no inverse document frequency: on the labelled set it finds a gold chunk
+  in its top 10 for 34% of questions, and fusing it in makes hybrid worse than vector alone (day 4). Day 5 measures
+  IDF (BM25-style) weighting; until then `ask` still defaults to hybrid.
+- The labelled questions are synthetic: 110 written by one model from the pages, half of them deliberately avoiding
+  their answer's words. They measure the retrievers against each other on this corpus, not what users would see.
+- Faithfulness is checked lexically (content words and exact terms in the cited passages): a claim that says the
+  opposite in its passage's words passes. With no LLM recordings, every evaluated answer is extractive.
 - HNSW is approximate: 0.989 of the exact top 10 on 300 easy questions at ef_search 40. At this size the planner
   sometimes prefers an exact sequential scan (hybrid's 50 candidates), which is fine here and wouldn't be at scale.
 - Reciprocal rank fusion favours chunks both retrievers rank moderately over one that only one ranks high.
@@ -415,8 +496,8 @@ so its "exact at 100" was the planner's sequential scan; the floor I had raised 
 - `recall search` and `recall ask` load the models for every command (seconds); `recall serve` keeps them loaded.
 - No answer here has been written by an LLM: there is no key on this machine, so `recordings/` is empty and every
   answer is extractive. The live provider is tested against a local stand-in for Anthropic's API, not against Claude.
-- The citation check shows where a claim came from, not that the claim follows from the quote (day 4 measures
-  faithfulness). A quote is found at its first occurrence in the passage.
+- The citation check shows where a claim came from, not that the claim follows from the quote (day 4 adds a lexical
+  faithfulness check). A quote is found at its first occurrence in the passage, starting and ending on word boundaries.
 - Extractive answers are the passages' own sentences, chosen one by one and listed best first: correct spans, but not
   prose, and a sentence that only makes sense after the one before it can be chosen alone.
 - Sentence splitting is a few rules (end punctuation, a handful of abbreviations), not a trained splitter.
