@@ -289,7 +289,9 @@ same as hybrid + rerank's recall@5), and 50.0% cite one.
 **The gate.** CI's model job ingests the corpus, runs `recall eval --answers --check eval/baseline.json`, writes the
 tables to the run's summary and keeps the report as an artifact. It fails on a drop of more than one question's worth
 in any system's recall@k or 0.01 in MRR, or on different settings (a changed question file, corpus, chunker, model or
-fusion setting needs a new baseline committed with it).
+fusion setting needs a new baseline committed with it). The slack is needed: on Linux (CI run 40105681993, at
+`f507a79`, 412.5 s) every number matched the Mac's except hybrid's recall@10, 0.582 (one question fewer), and
+vector + rerank's recall@1, 0.400 (one more), with its MRR 0.492; the gate passed.
 
 ## Tests
 
