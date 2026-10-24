@@ -171,3 +171,17 @@ def test_a_short_word_ending_in_s_keeps_its_s():
 def test_support_is_the_share_of_content_words_against_the_threshold(text: str, supported: bool):
     check = check_claim(claim(text, 1), [hit(1, "alpha beta gamma")])
     assert check.supported is supported
+
+
+@pytest.mark.parametrize(
+    ("text", "terms"),
+    [
+        ("a limit of 1,500.25 units", {"1,500.25"}),  # the decimal part stays on
+        ("1234,567", {"1234", "567"}),  # a first group of more than three digits isn't a thousands number
+        ("12,34", {"12", "34"}),  # nor are groups of two
+        ("the U.S office", set()),  # capital abbreviations too
+        ("call f.write or a.b2", {"f.write", "a.b2"}),  # one letter then a dot isn't an abbreviation by itself
+    ],
+)
+def test_numbers_and_abbreviations_at_their_edges(text: str, terms: set[str]):
+    assert exact_terms(text) == terms

@@ -312,3 +312,14 @@ def test_a_system_the_baseline_lacks_needs_a_new_baseline():
 @pytest.mark.parametrize("bad", [None, [], {"settings": {}}, {"settings": {}, "scores": []}])
 def test_a_baseline_that_isnt_a_report_fails_the_gate(bad: Any):
     assert compare(baseline(), bad) == ["the baseline isn't a report written by recall eval --json"]
+
+
+def test_overlapping_repeats_count_at_every_offset(conn: psycopg.Connection):
+    load(conn, [Document("a.md", "A", "https://x/a/", "# A\n\nThe pattern is aaa here.\n")])
+    with pytest.raises(QuestionSetError, match=r"occurs 2 times in a\.md"):
+        gold_chunks(conn, [question("q", ("a.md", "aa"))])
+
+
+def test_baseline_settings_that_arent_an_object_fail_the_gate():
+    bad = baseline() | {"settings": ["not", "an", "object"]}
+    assert compare(baseline(), bad) == ["the baseline isn't a report written by recall eval --json"]

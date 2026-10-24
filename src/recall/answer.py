@@ -114,8 +114,8 @@ def load_documents(conn: psycopg.Connection, paths: Sequence[str]) -> dict[str, 
 class Timings:
     """Milliseconds spent in each step of ask()."""
 
-    # Embedding the question, the search and reading the retrieved chunks' pages; in the API also the wait for a
-    # pooled connection (it embeds before taking one).
+    # Embedding the question, the search and reading the retrieved chunks' pages; in the API also the waits for the
+    # model lock (to embed) and for a pooled connection.
     retrieve: float = 0.0
     rerank: float = 0.0
     answer: float = 0.0

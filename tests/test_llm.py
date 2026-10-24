@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -276,3 +277,15 @@ def test_a_recording_that_cant_be_written_leaves_no_temporary_file(tmp_path: Pat
 def test_a_recording_is_readable_by_others(tmp_path: Path):
     path = llm.write_recording(tmp_path, REQUEST, Completion('{"a": "4"}', "model-x"), "live:test")
     assert path.stat().st_mode & 0o777 == 0o644  # not mkstemp's 0600
+
+
+def test_a_recording_whose_mode_cant_be_set_leaks_no_descriptor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def refuse(fd: int, mode: int) -> None:
+        raise PermissionError("no")
+
+    monkeypatch.setattr(llm.os, "fchmod", refuse)
+    before = len(os.listdir("/dev/fd"))
+    with pytest.raises(PermissionError):
+        llm.write_recording(tmp_path, REQUEST, Completion('{"a": "4"}', "model-x"), "live:test")
+    assert len(os.listdir("/dev/fd")) == before
+    assert list(tmp_path.iterdir()) == []

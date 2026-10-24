@@ -48,7 +48,7 @@ def main() -> int:
         gold = gold_chunks(conn, questions)
         vectors = [embedder.embed_query(q.question) for q in questions]
         print(f"{len(questions)} questions; each cell: recall@1, recall@5, recall@10, MRR@{DEPTH}\n")
-        print("| setting | odd ids | even ids | all |\n|---|---|---|---|")
+        print("| setting | odd places in the file | even places | all |\n|---|---|---|---|")
         ranked = [
             Ranked(q, gold[q.id], tuple(h.chunk_id for h in retrieval.vector(conn, v, DEPTH)))
             for q, v in zip(questions, vectors, strict=True)
