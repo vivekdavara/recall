@@ -158,7 +158,8 @@ jobs:
           } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Retrieval evaluation (fails if worse than eval/baseline.json)
         # The real corpus ingested into the service database's public schema (the tests used schemas of their own),
-        # then every system on the labelled questions, and the answers' faithfulness, against the committed baseline.
+        # then every system on the labelled questions, gated against the committed baseline; the answers' faithfulness
+        # is reported, not gated.
         shell: bash
         env:
           RECALL_DATABASE_URL: postgresql://postgres@localhost:5544/recall_test

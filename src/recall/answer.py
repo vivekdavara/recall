@@ -114,7 +114,9 @@ def load_documents(conn: psycopg.Connection, paths: Sequence[str]) -> dict[str, 
 class Timings:
     """Milliseconds spent in each step of ask()."""
 
-    retrieve: float = 0.0  # the search and reading the retrieved chunks' pages
+    # Embedding the question, the search and reading the retrieved chunks' pages; in the API also the wait for a
+    # pooled connection (it embeds before taking one).
+    retrieve: float = 0.0
     rerank: float = 0.0
     answer: float = 0.0
 
@@ -182,8 +184,7 @@ def respond(
         if timings is not None:
             timings.rerank = (time.perf_counter() - t) * 1000
     t = time.perf_counter()
-    documents = {h.path: retrieved.documents[h.path] for h in hits if h.path in retrieved.documents}
-    result = answer(question, hits, provider, reranker, documents=documents)
+    result = answer(question, hits, provider, reranker, documents=retrieved.documents)
     if timings is not None:
         timings.answer = (time.perf_counter() - t) * 1000
     return result

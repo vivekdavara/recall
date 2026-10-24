@@ -4,8 +4,9 @@
 
 Needs `recall ingest` with the real model ($RECALL_DATABASE_URL) and the `embed` extra. Each question is embedded once;
 then hybrid's top 20 is taken at every (candidates, RRF k) pair. Choosing a setting by its score on the same questions
-it is reported on overfits them, so the questions are split in two by id (odd and even numbers): pick on one half, and
-the other half says whether the choice holds. Prints recall@1/5/10 and MRR@20 for each half and for all.
+it is reported on overfits them, so the questions are split in two by their place in the file (odd and even: with
+q001, q002, ... the odd and even ids): pick on one half, and the other half says whether the choice holds. Prints
+recall@1/5/10 and MRR@20 for each half and for all.
 """
 
 from __future__ import annotations
@@ -24,7 +25,8 @@ RRF_KS = (1, 10, 30, 60, 120)
 
 
 def half(ranked: Sequence[Ranked], parity: int) -> list[Ranked]:
-    return [r for r in ranked if int(r.question.id.lstrip("q")) % 2 == parity]
+    # By position in the file (first, third, ... and second, fourth, ...), whatever the ids look like.
+    return [r for n, r in enumerate(ranked, 1) if n % 2 == parity]
 
 
 def row(name: str, ranked: Sequence[Ranked]) -> str:

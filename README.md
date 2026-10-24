@@ -242,7 +242,8 @@ chunks (5,836 sentences of four words or more read alone, 5,496 read in their pa
 
 Apple M3, macOS 26.6.2, Python 3.11.12, on battery (Low Power Mode off); the real corpus (1,503 chunks) and models.
 
-**The question set** (`eval/questions.jsonl`): 110 **synthetic** questions over 66 pages, written by a Claude agent
+**The question set** (`eval/questions.jsonl`): 110 **synthetic** questions over 66 pages (69 counting the second
+gold pages), written by a Claude agent
 from the pages alone (no access to the retrievers or their results), each with gold quotes from its page; 12 have a
 second page that also answers. 55 are *identifier* questions, naming a term from their answer (often in its own
 words, which favours full-text search), and 55 are *paraphrases* that avoid every distinctive term of their answer (on

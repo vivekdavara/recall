@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -254,3 +255,15 @@ def test_search_holds_no_connection_while_a_model_runs(corpus: str):
         r = c.post("/search", json={"question": QUESTION, "rerank": True})
     assert r.status_code == 200, r.text
     assert probe.got == ["embedding", "reranking"]
+
+
+def test_asks_retrieve_time_includes_embedding_the_question(corpus: str):
+    # The API embeds before taking a connection, so its own clock, not retrieve()'s, must cover the embedding.
+    class SlowEmbedder(HashEmbedder):
+        def embed_query(self, text: str) -> list[float]:
+            time.sleep(0.05)
+            return super().embed_query(text)
+
+    with client_for(corpus, embedder=SlowEmbedder()) as c:
+        timings = c.post("/ask", json={"question": QUESTION}).json()["timings_ms"]
+    assert timings["retrieve"] >= 50

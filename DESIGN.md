@@ -389,7 +389,8 @@ of which can hold part of a password.
 `recall eval` measures retrieval on a labelled question set; `recall.evaluation` and `recall.faithfulness` are the
 code.
 
-**The questions** (`eval/questions.jsonl`, 110 of them over 66 pages, 55 of each kind). One JSON object a line: `id`,
+**The questions** (`eval/questions.jsonl`, 110 of them, 55 of each kind; each question's first gold item is on one
+of 66 pages, and the 12 questions with a second answering page bring the gold pages to 69). One JSON object a line: `id`,
 `question`, `kind` and `gold`, a list of `{page, quote}`. They are **synthetic**: written by a Claude agent from the
 pinned pages, read with `recall show`, with no access to the retrievers, their code or their results, so no question
 was chosen or worded by what the system finds. Each `kind` is one of two: `identifier` (the question names an identifier or exact term from its answer, the
@@ -416,10 +417,14 @@ question's rank in every system, so a change can be traced to the questions it m
 **Faithfulness** (`--answers`). Every question is answered as `recall ask` answers it (hybrid, reranked, 5 passages, the
 provider `RECALL_LLM` names), and each claim is checked against the passages it cites: at least 75% of its distinct
 content words (stop words dropped, a plural `s` stripped) must be in them, and every exact term must be found as
-written (code spans, numbers, words with an underscore, a dot or a dash inside, CamelCase). That catches a claim that
+written, as a whole word (code spans; numbers, "1,500" as one; words with an underscore, a dot or a dash inside;
+words with a capital after the first letter, so CamelCase and acronyms like JSON; not abbreviations like "e.g.").
+Acronym plurals ("APIs" against "API") and hyphenated English ("built-in") are terms too, so a faithful paraphrase
+can fail on them. That catches a claim that
 changes a default or invents a parameter; it is lexical, so a claim that negates its passage in the passage's own
 words passes (a test pins this limit). Per answer it also records whether a citation is a gold chunk and whether any
-of its passages is. With no recordings and no key here, every answer is extractive, which is supported by
+of its passages is. The answers are reported, not gated. With no recordings and no key here, every answer is
+extractive, which is supported by
 construction (its claims are the passages' sentences), so on this machine the faithfulness numbers test the harness;
 the gold-citation shares are the informative ones. With `RECALL_LLM=anthropic RECALL_RECORD=1` the same run records
 model answers, which CI would then replay.

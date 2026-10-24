@@ -99,8 +99,8 @@ def write_recording(directory: Path, request: Request, completion: Completion, p
     fd, name = tempfile.mkstemp(dir=directory, prefix=f"{key}.", suffix=".partial")
     partial = Path(name)
     try:
-        os.fchmod(fd, 0o644)  # mkstemp's 0600 would make a recording unreadable to anyone else
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:  # owns fd from here, so it is closed whatever fails
+            os.fchmod(f.fileno(), 0o644)  # mkstemp's 0600 would make a recording unreadable to anyone else
             f.write(json.dumps(record, indent=2) + "\n")
         partial.replace(path)
     except BaseException:
