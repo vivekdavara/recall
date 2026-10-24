@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +11,19 @@ import psycopg
 import pytest
 from test_retrieval import DOCS, load
 
-from recall.answer import SYSTEM_PROMPT, Answer, answer, ask, build_request, load_documents
+from recall.answer import (
+    SYSTEM_PROMPT,
+    Answer,
+    Retrieved,
+    answer,
+    ask,
+    build_request,
+    load_documents,
+    respond,
+    retrieve,
+)
 from recall.citations import ANSWER_SCHEMA
+from recall.corpus.load import Document
 from recall.embedding import HashEmbedder
 from recall.llm import HAND_WRITTEN, Completion, ProviderError, RecordedProvider, Request, write_recording
 from recall.rerank import OverlapReranker
@@ -203,3 +215,41 @@ def test_load_documents_reads_the_pages_asked_for(conn: psycopg.Connection):
     load(conn)
     assert load_documents(conn, ["query.md", "query.md", "missing.md"]) == {"query.md": DOCS[0].content}
     assert load_documents(conn, []) == {}
+
+
+# A code block longer than a chunk is split, so the page's last chunk here starts inside the code; read alone, its
+# code lines are "sentences" and its closing fence hides the prose after it. The day-3 review's survivor: ask() with
+# the pages replaced by {} passed every test.
+CODE = "".join(f"    field_{i}: int = {i}. Not a sentence here.\n" for i in range(12))
+SPLIT = Document(
+    "models.md",
+    "Models",
+    "https://x/models/",
+    "# Models\n\nDeclare the model first.\n\n```python\nclass Item(BaseModel):\n" + CODE + "```\n\n"
+    "Then pass the model as a parameter of your function.\n",
+)
+SPLIT_QUESTION = "How do I pass the model as a parameter of my function?"
+
+
+def test_ask_reads_a_chunk_that_starts_inside_code_in_its_page(conn: psycopg.Connection):
+    load(conn, [SPLIT])
+    result, _ = ask(conn, SPLIT_QUESTION, HashEmbedder(), OverlapReranker(), None, passages=1, depth=3)
+    assert result.passages[0].content.startswith("field_9")  # the chunk that starts inside the code block
+    assert [c.text for c in result.claims] == ["Then pass the model as a parameter of your function."]
+
+
+def test_retrieve_reads_every_retrieved_chunks_page(conn: psycopg.Connection):
+    load(conn)
+    retrieved = retrieve(conn, "default values email JSON", HashEmbedder(), passages=1, depth=5)
+    assert len(retrieved.hits) == 5
+    assert set(retrieved.documents) == {h.path for h in retrieved.hits}
+    assert all(retrieved.documents[d.path] == d.content for d in DOCS if d.path in retrieved.documents)
+
+
+def test_respond_answers_from_the_pages_it_was_given():
+    second = Hit(3, "models.md", "Models", "https://x/models/", ("Models",), 460, 646, "", 0.5, 1, 1)
+    second = replace(second, content=SPLIT.content[460:646], end=646)
+    with_pages = respond(SPLIT_QUESTION, Retrieved((second,), {"models.md": SPLIT.content}), OverlapReranker(), None)
+    assert [c.text for c in with_pages.claims] == ["Then pass the model as a parameter of your function."]
+    alone = respond(SPLIT_QUESTION, Retrieved((second,), {}), OverlapReranker(), None)
+    assert [c.text for c in alone.claims] != [c.text for c in with_pages.claims]
