@@ -383,6 +383,53 @@ echoes it back, and a lone surrogate can't be encoded, which made the 422 a 500.
 schema, or vectors from another model are 503s, and the message says nothing of the URL or the server's error, either
 of which can hold part of a password.
 
+## Evaluation
+
+`recall eval` measures retrieval on a labelled question set; `recall.evaluation` and `recall.faithfulness` are the
+code.
+
+**The questions** (`eval/questions.jsonl`, 110 of them over 66 pages, 55 of each kind). One JSON object a line: `id`,
+`question`, `kind` and `gold`, a list of `{page, quote}`. They are **synthetic**: written by a Claude agent from the
+pinned pages, read with `recall show`, with no access to the retrievers, their code or their results, so no question
+was chosen or worded by what the system finds. Each `kind` is one of two: `identifier` (the question names an identifier or exact term from its answer, the
+case full-text search is for) and `paraphrase` (the question describes the need in other words and holds none of the
+answer's distinctive terms, the case vector search is for). A gold quote is the text that states the answer, copied
+from the page's normalized text and found there exactly once; a question has more than one gold item only when
+another page also answers it on its own.
+
+**Gold chunks.** The labels name text, not chunk ids: a question's gold chunks are the chunks of a gold page whose span
+overlaps a gold quote, found in the database each time the evaluation runs (`gold_chunks`). So re-chunking or
+re-ingesting doesn't invalidate the labels; a quote that is no longer in its page exactly once, or lies only in a
+heading line (headings aren't chunk text), fails the run with every such problem listed.
+
+**Systems.** Each ranks the top 20 for every question: `full-text`, `vector`, `hybrid` (RRF of the two),
+`vector+rerank` and `hybrid+rerank` (the vector or hybrid top 20 reordered by the cross-encoder; hybrid+rerank is
+exactly what `ask` reranks by default). 20 is the reranker's depth, so recall@20 is the same with and without the
+reranker by construction. Each question is embedded once for all systems.
+
+**Metrics.** **recall@k**: the share of questions with a gold chunk in the top k (gold items are alternatives, so one
+is enough), for k = 1, 3, 5, 10, 20. **MRR@20**: the mean over questions of 1 / the rank of the first gold chunk, 0
+when none is in the top 20. Both overall and per kind. The report (`--json`) holds the settings, the scores and every
+question's rank in every system, so a change can be traced to the questions it moved.
+
+**Faithfulness** (`--answers`). Every question is answered as `recall ask` answers it (hybrid, reranked, 5 passages, the
+provider `RECALL_LLM` names), and each claim is checked against the passages it cites: at least 75% of its distinct
+content words (stop words dropped, a plural `s` stripped) must be in them, and every exact term must be found as
+written (code spans, numbers, words with an underscore, a dot or a dash inside, CamelCase). That catches a claim that
+changes a default or invents a parameter; it is lexical, so a claim that negates its passage in the passage's own
+words passes (a test pins this limit). Per answer it also records whether a citation is a gold chunk and whether any
+of its passages is. With no recordings and no key here, every answer is extractive, which is supported by
+construction (its claims are the passages' sentences), so on this machine the faithfulness numbers test the harness;
+the gold-citation shares are the informative ones. With `RECALL_LLM=anthropic RECALL_RECORD=1` the same run records
+model answers, which CI would then replay.
+
+**The gate.** `eval/baseline.json` is a report committed with the code. CI's model job runs `recall eval --check
+eval/baseline.json` on the real corpus with the real models and fails if any system's recall@k drops by more than one
+question's worth or its MRR by more than 0.01 (slack for float differences between machines moving a near-tie), or if
+the settings differ: the question file's SHA-256, the corpus commit, the chunker and chunk count, the models, depth,
+candidates and the RRF k. A change that improves retrieval should commit a new baseline with it, so the gate then
+holds the new level.
+
 ## The local database
 
 `scripts/pg.sh` runs a project-local PostgreSQL 17 cluster on port 5544 with its data in `.pgdata/` (gitignored):
@@ -435,10 +482,8 @@ flowchart LR
 
 - **Day 2, retrieval.** Done: "Embeddings" and "Retrieval" above.
 - **Day 3, answers.** Done: "Reranking", "Answers" and "The API" above.
-- **Day 4, evaluation.** A labelled question set (synthetic, written against the pinned corpus, each question with its
-  gold chunk spans), recall@k and MRR per retriever, faithfulness checks on answers, and a CI job that fails when
-  recall@k drops below the committed baseline. Also BM25-style weighting (inverse document frequency) for full-text
-  search, measured against ts_rank_cd, and the choice of `candidates` and the RRF k.
+- **Day 4, evaluation.** Done: "Evaluation" above. Also planned for day 4: BM25-style weighting (inverse document
+  frequency) for full-text search, measured against ts_rank_cd, and the choice of `candidates` and the RRF k.
 - **Day 5.** The ablation table (full-text vs vector vs hybrid vs hybrid + rerank), README results, WALKTHROUGH.md,
   v1.0.0.
 

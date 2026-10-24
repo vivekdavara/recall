@@ -156,3 +156,29 @@ jobs:
             python scripts/token_fit.py --reranker --question "How do I declare a query parameter with a default value?"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Retrieval evaluation (fails if worse than eval/baseline.json)
+        # The real corpus ingested into the service database's public schema (the tests used schemas of their own),
+        # then every system on the labelled questions, and the answers' faithfulness, against the committed baseline.
+        shell: bash
+        env:
+          RECALL_DATABASE_URL: postgresql://postgres@localhost:5544/recall_test
+        run: |
+          recall ingest
+          set +e
+          recall eval --answers --json eval-report.json --check eval/baseline.json > eval-output.txt 2>&1
+          status=$?
+          set -e
+          {
+            echo '### Retrieval evaluation (recall eval --answers --check eval/baseline.json)'
+            echo '```'
+            cat eval-output.txt
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit $status
+      - name: Keep the evaluation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-report
+          path: eval-report.json
+          if-no-files-found: ignore
