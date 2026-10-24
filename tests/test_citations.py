@@ -169,6 +169,7 @@ def test_find_quote_prefers_the_exact_text_and_the_first_occurrence():
 def test_a_quote_must_start_and_end_where_words_do():
     assert find_quote("secure by default", "insecure by default") is None
     assert find_quote("secure by default", "insecure by defaults") is None
+    assert find_quote("secure by default", "it is secure by defaults") is None  # the end's boundary alone
     assert find_quote("secure by default", "insecure by default, secure by default.") == (21, 38)
     assert find_quote("secure by\ndefault", "it is secure by default") == (6, 23)
     # Punctuation at an end needs no word boundary: a quote may start or stop inside a token like (item_id).

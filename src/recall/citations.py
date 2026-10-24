@@ -89,10 +89,13 @@ def find_quote(quote: str, text: str) -> tuple[int, int] | None:
     """Where `quote` occurs in `text`: exactly, or else with any run of whitespace standing for any other.
 
     Models often re-wrap the text they copy (a newline becomes a space); that is still the passage's text. Anything
-    else (a changed word, different punctuation) is not found. A quote that starts or ends with a word character
-    must start or end a word there too: "secure by default" isn't in "insecure by default" (the day-3 review). The
-    first occurrence counts.
+    else (a changed word, different punctuation) is not found. Whitespace at the quote's ends is ignored, and a quote
+    whose first or last other character is a word character must start or end a word there too: "secure by default"
+    isn't in "insecure by default" (the day-3 review). The first occurrence counts.
     """
+    # Whitespace at either end is dropped first: models copy a line with its newline, and with the whitespace kept the
+    # boundary would be decided by it, so " secure by default" matched inside "insecure by default" (day-4 review).
+    quote = quote.strip()
     words = quote.split()
     if not words:
         return None
