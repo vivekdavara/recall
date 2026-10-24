@@ -452,6 +452,13 @@ gate's comment though answers aren't gated; DESIGN's narrower description of exa
 left as they are: the gate is overall and one-sided (a regression on one kind of question offset by the other passes);
 answers aren't gated; acronym plurals and hyphenated English count as exact terms; stemming only strips a final `s`.
 
+A second agent reviewed only those fixes (at `d1ed563`, 8 minutes) and found two defects, both in my fix of the
+faithfulness terms (`tests/review_d4b/`, 6 cases, fixed in `e82579a`): a unit glued to a comma number ("1,024MB") split
+off, so a claim copying its passage word for word was unsupported; and terms were still found inside bigger numbers in
+the passage ("500" in "1,500", "10" in "10.5"), so a claim turning 1,500 into 500 passed. Of its 25 mutations, 13 left
+the tests green; 12 fail a test now (`64fab9c`), and the 13th (the empty-baseline check) is equivalent to the
+missing-system rule.
+
 ## Design decisions
 
 - **FastAPI's docs as the corpus.** MIT-licensed, one subject, many near-duplicate passages that differ in detail, and
