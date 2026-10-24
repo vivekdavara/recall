@@ -257,8 +257,9 @@ words in order while the query has at most 256 nodes (at most 64 words); ts_rank
 and a 20,000-word question or one pasted list failed before (the day-2 reviews). Chunks matching the query (through the GIN index) are ranked by `ts_rank_cd` with the A/B/D
 weights (1.0, 0.4, 0.1) and normalization 1 (divided by 1 + log of the chunk's length). This is not BM25: ts_rank_cd
 counts how often and how close together the words occur but has no inverse document frequency, so a common word
-("return", "response") counts as much as a rare one. The smoke questions show the cost (a question in common words
-misses its page); day 4 measures BM25-style IDF weighting against it on the labelled set.
+("return", "response") counts as much as a rare one. Day 4's labelled set measured the cost: full-text finds a gold
+chunk in its top 10 for 34% of the questions (vector 73%), and fusing its list in makes hybrid worse than vector alone
+("Evaluation"). Day 5 measures BM25-style IDF weighting against it.
 
 **Vector.** `ORDER BY embedding <=> question LIMIT n` through the HNSW index, with row numbers taken outside that
 subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan picks at most
@@ -482,10 +483,12 @@ flowchart LR
 
 - **Day 2, retrieval.** Done: "Embeddings" and "Retrieval" above.
 - **Day 3, answers.** Done: "Reranking", "Answers" and "The API" above.
-- **Day 4, evaluation.** Done: "Evaluation" above. Also planned for day 4: BM25-style weighting (inverse document
-  frequency) for full-text search, measured against ts_rank_cd, and the choice of `candidates` and the RRF k.
-- **Day 5.** The ablation table (full-text vs vector vs hybrid vs hybrid + rerank), README results, WALKTHROUGH.md,
-  v1.0.0.
+- **Day 4, evaluation.** Done: "Evaluation" above. The choice of `candidates` and the RRF k was measured
+  (`scripts/sweep_fusion.py`, on two halves of the questions): no setting beats vector alone and a smaller k helps
+  hybrid on both halves, so the fault is the full-text list and the defaults stay until it is fixed.
+- **Day 5.** BM25-style weighting (inverse document frequency) for full-text search, measured against ts_rank_cd;
+  then the default retrieval mode chosen from the ablation table (full-text vs vector vs hybrid, with and without the
+  reranker), README results, WALKTHROUGH.md, v1.0.0.
 
 ## Testing
 
