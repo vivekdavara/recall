@@ -328,7 +328,8 @@ def cmd_eval(args: argparse.Namespace) -> int:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
         print(f"\nwrote {args.json}")
-    if baseline is not None:
+    if args.check:
+        # Even a baseline file holding JSON null goes to compare, which refuses it: a gate that can't compare fails.
         problems = evaluation.compare(body, baseline)
         if problems:
             print(f"\nworse than {args.check}:", file=sys.stderr)

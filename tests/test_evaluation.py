@@ -11,6 +11,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from test_retrieval import load
 
+from recall import retrieval
 from recall.corpus.load import Document
 from recall.embedding import HashEmbedder
 from recall.evaluation import (
@@ -22,6 +23,7 @@ from recall.evaluation import (
     QuestionSetError,
     Ranked,
     compare,
+    evaluate,
     gold_chunks,
     index_settings,
     paired,
@@ -269,3 +271,44 @@ def test_a_database_with_no_corpus_has_no_settings_to_evaluate(conn: psycopg.Con
     count = conn.execute("SELECT count(*) FROM chunks").fetchone()
     assert count is not None and settings["chunks"] == count[0] > 0
     assert settings["max_tokens"] == 64 and settings["chunker_version"] >= 1 and len(settings["corpus_commit"]) == 40
+
+
+def test_a_chunk_that_only_touches_a_quote_isnt_gold(conn: psycopg.Connection):
+    # A run with no whitespace is cut between tokens, so these chunks touch: one ends where the next starts. A quote
+    # that is exactly the second chunk touches the first and third chunks but overlaps neither.
+    run = ".".join(f"w{i}" for i in range(30))
+    load(conn, [Document("run.md", "Run", "https://x/run/", f"# T\n\n{run}\n")], max_tokens=16)
+    ids = chunk_ids(conn, "run.md")
+    assert len(ids) == 4
+    gold = gold_chunks(conn, [question("q", ("run.md", "w8.w9.w10.w11.w12.w13.w14.w15."))])
+    assert gold["q"] == {ids[1]}
+
+
+def test_candidates_and_rrf_k_reach_the_hybrid_query(conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch):
+    # The settings a baseline records must be the ones the rankings used.
+    load(conn)
+    calls: list[tuple[int, int]] = []
+    real = retrieval.hybrid
+
+    def spy(*args: Any, candidates: int, rrf_k: int, **kwargs: Any) -> list[retrieval.Hit]:
+        calls.append((candidates, rrf_k))
+        return real(*args, candidates=candidates, rrf_k=rrf_k, **kwargs)
+
+    monkeypatch.setattr(retrieval, "hybrid", spy)
+    questions = [question("q", ("query.md", "skip and limit have default values."))]
+    r = evaluate(conn, questions, "sha", HashEmbedder(), OverlapReranker(), ["hybrid"], candidates=7, rrf_k=3)
+    assert calls == [(7, 3)]
+    assert (r.settings["candidates"], r.settings["rrf_k"]) == (7, 3)
+    assert r.settings["reranker"] is None  # no reranked system measured
+    assert evaluate(conn, questions, "sha", None, None, ["full-text"]).settings["candidates"] is None
+
+
+def test_a_system_the_baseline_lacks_needs_a_new_baseline():
+    current = baseline()
+    current["scores"]["vector"] = current["scores"]["hybrid"]
+    assert compare(current, baseline()) == ["vector: measured but not in the baseline: write a new baseline"]
+
+
+@pytest.mark.parametrize("bad", [None, [], {"settings": {}}, {"settings": {}, "scores": []}])
+def test_a_baseline_that_isnt_a_report_fails_the_gate(bad: Any):
+    assert compare(baseline(), bad) == ["the baseline isn't a report written by recall eval --json"]

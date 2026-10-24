@@ -131,7 +131,7 @@ def gold_chunks(conn: psycopg.Connection, questions: Sequence[Question]) -> dict
             if content is None:
                 problems.append(f"{q.id}: no page {g.page} in the database")
                 continue
-            count = content.count(g.quote)
+            count = _occurrences(g.quote, content)
             if count != 1:
                 problems.append(f"{q.id}: the quote occurs {count} times in {g.page}, not once")
                 continue
@@ -146,6 +146,16 @@ def gold_chunks(conn: psycopg.Connection, questions: Sequence[Question]) -> dict
         more = f" (and {len(problems) - 10} more)" if len(problems) > 10 else ""
         raise QuestionSetError("; ".join(problems[:10]) + more)
     return result
+
+
+def _occurrences(quote: str, text: str) -> int:
+    """How many times `quote` occurs in `text`, overlapping ones included. str.count skips overlaps: "no, no" is twice
+    in "no, no, no" but counted once (the day-4 review)."""
+    count, at = 0, text.find(quote)
+    while at >= 0:
+        count += 1
+        at = text.find(quote, at + 1)
+    return count
 
 
 @dataclass(frozen=True)
@@ -310,7 +320,8 @@ def sign_test(a_only: int, b_only: int) -> float:
     if n == 0:
         return 1.0
     tail = sum(math.comb(n, i) for i in range(min(a_only, b_only) + 1))
-    return min(1.0, 2 * tail / float(2**n))
+    # Integer division into a float: exact for any n, where float(2**n) overflowed from n = 1024 (the day-4 review).
+    return min(1.0, (2 * tail) / (1 << n))
 
 
 @dataclass(frozen=True)
@@ -358,10 +369,19 @@ def paired_table(ranks: Mapping[str, Mapping[str, int | None]], against: str, ks
     return "\n".join([head, rule, *rows])
 
 
-def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> list[str]:
+def compare(current: Mapping[str, Any], baseline: Any) -> list[str]:
     """Why `current` (a report's JSON) is worse than `baseline`; empty if it isn't. Both must be of the same question
-    set with the same settings, or there's nothing to compare: that is reported too. recall@k may drop by one
-    question's worth and MRR by MRR_SLACK (see there)."""
+    set with the same settings and measure the same systems, or there's nothing to compare: that is reported too.
+    recall@k may drop by one question's worth and MRR by MRR_SLACK (see there). A baseline that isn't a report, or
+    measures nothing, is a problem, never a pass (the day-4 review: {"scores": {}} passed anything)."""
+    if (
+        not isinstance(baseline, dict)
+        or not isinstance(baseline.get("settings"), dict)
+        or not isinstance(baseline.get("scores"), dict)
+    ):
+        return ["the baseline isn't a report written by recall eval --json"]
+    if not baseline["scores"]:
+        return ["the baseline measures no system"]
     if current["settings"] != baseline["settings"]:
         changed = sorted(
             k
@@ -369,7 +389,11 @@ def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> list[str
             if current["settings"].get(k) != baseline["settings"].get(k)
         )
         return [f"the settings differ from the baseline's ({', '.join(changed)}): write a new baseline"]
-    problems = []
+    problems = [
+        f"{system}: measured but not in the baseline: write a new baseline"
+        for system in current["scores"]
+        if system not in baseline["scores"]
+    ]
     for system, base in baseline["scores"].items():
         now = current["scores"].get(system)
         if now is None:
