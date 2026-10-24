@@ -427,6 +427,31 @@ idle while the model loaded, which a server's idle timeout ends (`74d3c75`).
 My own mistake, found during the second review: the first measurement script checked its plans only at ef_search 40,
 so its "exact at 100" was the planner's sequential scan; the floor I had raised to 100 is back at 40 (`9c4f90b`).
 
+## Review of day 4
+
+First, the day-3 review's leftovers: `/ask` held its pooled connection through the reranker and the LLM call, so four
+slow answers used up the pool and `/search` and `/healthz` failed meanwhile (now the API embeds before taking a
+connection and returns it before any model runs; a one-connection pool in the test proves it, `f61cb71`); concurrent
+writers of one recording shared a `.partial` name (`8c86895`); quotes matched inside words (`7eb0f72`).
+
+Then one agent reviewed day 4 at `713a52a` (21 minutes, correctness framing, its own worktree) and reproduced 7
+defects as 11 failing tests (`tests/review_d4/`), each checked to fail before its fix:
+
+- Whitespace at either end of a quote turned the new word-boundary rule off: `" secure by default"` (a line copied
+  with its newline) checked out inside "insecure by default" (`5dc64dd`).
+- The gate passed any report against a baseline with no scores, and `recall eval` skipped it for a `--check` file
+  holding JSON `null`; gold quotes repeated with overlap ("no, no" in "no, no, no") counted once; the sign test
+  overflowed from 1,024 discordant questions (`bf7bbeb`).
+- Faithfulness split "1,500" into "1" and "500" (a changed default passed) and treated "e.g." as a term (`4742ce8`).
+
+It also ran 48 mutations; 19 left every test green. Each now fails a new test (touching chunks counted as gold;
+`rrf_k` and `candidates` not reaching the query or the recorded settings; the threshold, the stem guard, dotted and
+hyphenated terms, whole-word term matching; the API's retrieve clock; the paired table's reference system), except one
+whose code was redundant and is gone (`d1ed563`). Its docs mismatches (69 gold pages, not 66; "faithfulness" in the CI
+gate's comment though answers aren't gated; DESIGN's narrower description of exact terms) are fixed. Judgement calls
+left as they are: the gate is overall and one-sided (a regression on one kind of question offset by the other passes);
+answers aren't gated; acronym plurals and hyphenated English count as exact terms; stemming only strips a final `s`.
+
 ## Design decisions
 
 - **FastAPI's docs as the corpus.** MIT-licensed, one subject, many near-duplicate passages that differ in detail, and

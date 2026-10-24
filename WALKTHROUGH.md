@@ -510,6 +510,25 @@ were caught; the two that weren't (deleting a page exclusion) exposed a test tha
 of the review's survivors were dead code, which I removed, and one is `load`'s "only files in the manifest" check,
 which `verify` makes unreachable.
 
+## What went wrong on day 4
+
+**What did the review of the evaluation find?**
+Seven defects, two of them in the gate itself: a baseline with no scores passed any report, and a `--check` file
+holding JSON `null` skipped the comparison and exited 0. A gate has to fail closed: anything it can't compare is now a
+failure. The others: a quote copied with its newline slipped past the word-boundary rule I had added that morning;
+overlapping repeats of a gold quote counted once (`str.count` skips overlaps); "1,500" was two terms to the
+faithfulness check, so changing a default from 1,000 to 1,500 passed; and the sign test overflowed past 1,023
+discordant questions.
+
+**Which tests did it show were missing?**
+19 of its 48 mutations left the suite green, for example: `rrf_k` and `candidates` never reaching the hybrid query (so
+a baseline would record settings that weren't used), the faithfulness threshold moved to 0.6 or 0.9, chunks that only
+touch a quote counted as gold. Each now fails a test; one survivor was redundant code, now removed.
+
+**What would you do differently?**
+Write the gate's failure cases first: what a gate refuses matters more than what it accepts, and both of its bugs were
+inputs I never imagined it receiving.
+
 ## What went wrong on day 1
 
 **Tell me about a mistake you made.**
