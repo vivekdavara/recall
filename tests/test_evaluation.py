@@ -168,8 +168,9 @@ def test_every_system_ranks_every_question(conn: psycopg.Connection):
         assert [r.question.id for r in rs] == ["q1", "q2"], system
         assert all(len(r.chunk_ids) <= DEPTH and len(set(r.chunk_ids)) == len(r.chunk_ids) for r in rs)
     assert out["full-text"][0].rank == 1
-    for plain, reranked in zip(out["hybrid"], out["hybrid+rerank"], strict=True):
-        assert sorted(plain.chunk_ids) == sorted(reranked.chunk_ids)  # the reranker only reorders
+    for system, base in (("hybrid+rerank", "hybrid"), ("vector+rerank", "vector")):
+        for plain, reranked in zip(out[base], out[system], strict=True):
+            assert sorted(plain.chunk_ids) == sorted(reranked.chunk_ids)  # the reranker only reorders
     # Full-text needs no embedder or reranker.
     only = rank_all(conn, questions, gold, None, None, ["full-text"])
     assert [r.chunk_ids for r in only["full-text"]] == [r.chunk_ids for r in out["full-text"]]
@@ -183,8 +184,8 @@ def test_rank_all_refuses_what_it_cant_run(conn: psycopg.Connection):
         rank_all(conn, questions, gold, HashEmbedder(), None, ["bm25"])  # type: ignore[list-item]
     with pytest.raises(ValueError, match="need an embedder"):
         rank_all(conn, questions, gold, None, None, ["vector"])
-    with pytest.raises(ValueError, match="needs a reranker"):
-        rank_all(conn, questions, gold, HashEmbedder(), None, ["hybrid+rerank"])
+    with pytest.raises(ValueError, match="vector\\+rerank, hybrid\\+rerank needs a reranker"):
+        rank_all(conn, questions, gold, HashEmbedder(), None, ["vector+rerank", "hybrid+rerank"])
 
 
 def test_the_report_splits_by_kind_and_keeps_each_rank():

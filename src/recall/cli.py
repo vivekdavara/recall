@@ -283,7 +283,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         with db.connect() as conn:
             retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
         embedder = make_embedder(args.embedder)
-    reranker = make_reranker(args.reranker) if args.answers or "hybrid+rerank" in systems else None
+    reranker = make_reranker(args.reranker) if args.answers or any(s in evaluation.RERANKED for s in systems) else None
     start = time.perf_counter()
     with db.connect() as conn:
         result = evaluation.evaluate(
@@ -421,8 +421,8 @@ def parser() -> argparse.ArgumentParser:
     e.add_argument(
         "--systems",
         type=systems_list,
-        default=["full-text", "vector", "hybrid", "hybrid+rerank"],
-        help="comma-separated (default: all four: full-text, vector, hybrid, hybrid+rerank)",
+        default=["full-text", "vector", "hybrid", "vector+rerank", "hybrid+rerank"],
+        help="comma-separated (default: all five: full-text, vector, hybrid, vector+rerank, hybrid+rerank)",
     )
     e.add_argument("--candidates", type=list_length, default=retrieval.DEFAULT_CANDIDATES, help="hybrid's lists")
     e.add_argument("--rrf-k", type=int, default=retrieval.RRF_K, help="the k in 1 / (k + rank) (default %(default)s)")

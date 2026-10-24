@@ -125,7 +125,10 @@ def test_a_gold_quote_the_database_lacks_is_one_line(corpus: str, tmp_path: Path
 def test_unknown_systems_are_refused(questions: Path, capsys: pytest.CaptureFixture[str]):
     with pytest.raises(SystemExit):
         run(questions, "--systems", "full-text,bm25")
-    assert "use a comma-separated list of full-text, vector, hybrid, hybrid+rerank" in capsys.readouterr().err
+    assert (
+        "use a comma-separated list of full-text, vector, hybrid, vector+rerank, hybrid+rerank"
+        in capsys.readouterr().err
+    )
 
 
 def test_eval_answers_checks_faithfulness_and_reports_it(

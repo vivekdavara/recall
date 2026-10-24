@@ -23,11 +23,12 @@ from recall.rerank import DEFAULT_DEPTH, Reranker, rerank
 
 Kind = Literal["identifier", "paraphrase"]
 KINDS: tuple[Kind, ...] = ("identifier", "paraphrase")
-System = Literal["full-text", "vector", "hybrid", "hybrid+rerank"]
-SYSTEMS: tuple[System, ...] = ("full-text", "vector", "hybrid", "hybrid+rerank")
+System = Literal["full-text", "vector", "hybrid", "vector+rerank", "hybrid+rerank"]
+SYSTEMS: tuple[System, ...] = ("full-text", "vector", "hybrid", "vector+rerank", "hybrid+rerank")
+RERANKED: dict[System, System] = {"vector+rerank": "vector", "hybrid+rerank": "hybrid"}
 # How far down each system's list a gold chunk is looked for: the reranker's depth, so hybrid+rerank is exactly what
-# ask() does (hybrid's top 20, reordered). MRR is over this depth (MRR@20), and recall@20 is the same for hybrid and
-# hybrid+rerank by construction: the reranker only reorders.
+# ask() does (hybrid's top 20, reordered) and vector+rerank what ask(mode="vector") does. MRR is over this depth
+# (MRR@20), and recall@20 is the same with and without the reranker by construction: it only reorders.
 DEPTH = DEFAULT_DEPTH
 KS = (1, 3, 5, 10, 20)
 # The gate's slack: a platform's float differences can move a near-tie, so recall@k may drop by one question's worth
@@ -201,8 +202,9 @@ def rank_all(
         if embedder is None:
             raise ValueError("vector and hybrid systems need an embedder")
         retrieval.check_model(conn, embedder)
-    if "hybrid+rerank" in systems and reranker is None:
-        raise ValueError("hybrid+rerank needs a reranker")
+    reranked = [s for s in systems if s in RERANKED]
+    if reranked and reranker is None:
+        raise ValueError(f"{', '.join(reranked)} needs a reranker")
     out: dict[System, list[Ranked]] = {s: [] for s in systems}
     for q in questions:
         lists: dict[System, list[retrieval.Hit]] = {}
@@ -211,14 +213,15 @@ def rank_all(
         if needs_vectors:
             assert embedder is not None
             query_vector = embedder.embed_query(q.question)
-            if "vector" in systems:
+            if "vector" in systems or "vector+rerank" in systems:
                 lists["vector"] = retrieval.vector(conn, query_vector, depth)
             if "hybrid" in systems or "hybrid+rerank" in systems:
-                fused = retrieval.hybrid(conn, q.question, query_vector, depth, candidates=candidates, rrf_k=rrf_k)
-                lists["hybrid"] = fused
-                if "hybrid+rerank" in systems:
-                    assert reranker is not None
-                    lists["hybrid+rerank"] = [r.hit for r in rerank(q.question, fused, reranker)]
+                lists["hybrid"] = retrieval.hybrid(
+                    conn, q.question, query_vector, depth, candidates=candidates, rrf_k=rrf_k
+                )
+        for system in reranked:
+            assert reranker is not None
+            lists[system] = [r.hit for r in rerank(q.question, lists[RERANKED[system]], reranker)]
         for s in systems:
             out[s].append(Ranked(q, gold[q.id], tuple(h.chunk_id for h in lists[s])))
     return out
@@ -278,7 +281,7 @@ def evaluate(
         "questions": len(questions),
         **index_settings(conn),
         "embedder": embedder.name if embedder is not None and uses_vectors else None,
-        "reranker": reranker.name if reranker is not None and "hybrid+rerank" in systems else None,
+        "reranker": reranker.name if reranker is not None and any(s in RERANKED for s in systems) else None,
         "depth": DEPTH,
         "candidates": candidates if "hybrid" in systems or "hybrid+rerank" in systems else None,
         "rrf_k": rrf_k if "hybrid" in systems or "hybrid+rerank" in systems else None,
