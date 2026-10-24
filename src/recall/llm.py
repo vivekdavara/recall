@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -92,10 +93,19 @@ def write_recording(directory: Path, request: Request, completion: Completion, p
         "usage": {"input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens},
     }
     path = directory / f"{key}.json"
-    # Written beside the target and renamed, so a failure never leaves half a recording under the real name.
-    partial = path.with_suffix(".json.partial")
-    partial.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-    partial.replace(path)
+    # Written beside the target and renamed, so a failure never leaves half a recording under the real name. Each
+    # writer has a file of its own: with one shared ".partial" name, concurrent writers of the same recording renamed
+    # each other's half-written files (the day-3 review).
+    fd, name = tempfile.mkstemp(dir=directory, prefix=f"{key}.", suffix=".partial")
+    partial = Path(name)
+    try:
+        os.fchmod(fd, 0o644)  # mkstemp's 0600 would make a recording unreadable to anyone else
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(record, indent=2) + "\n")
+        partial.replace(path)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
     return path
 
 

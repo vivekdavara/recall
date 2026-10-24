@@ -238,3 +238,28 @@ def test_the_real_sdk_sends_the_request_this_provider_means(stand_in: str):
     assert body["output_config"] == {"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}}
     assert body["system"] == REQUEST.system
     assert body["messages"] == [{"role": "user", "content": REQUEST.prompt}]
+
+
+def test_concurrent_writes_of_one_recording_dont_collide(tmp_path: Path):
+    # The day-3 review: every writer of a recording used one ".partial" name, so one writer's rename could take the
+    # file another was writing (a half-written recording) or leave it nothing to rename (FileNotFoundError).
+    completion = Completion('{"a": "4"}', "model-x", 11, 2)
+    errors: list[BaseException] = []
+    start = threading.Barrier(8)
+
+    def write() -> None:
+        start.wait()
+        for _ in range(25):
+            try:
+                llm.write_recording(tmp_path, REQUEST, completion, "live:test")
+            except BaseException as e:
+                errors.append(e)
+
+    threads = [threading.Thread(target=write) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert RecordedProvider(tmp_path).complete(REQUEST) == completion
+    assert [p.name for p in tmp_path.iterdir()] == [f"{REQUEST.key()}.json"]

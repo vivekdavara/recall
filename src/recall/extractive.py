@@ -2,7 +2,8 @@
 
 DESIGN.md "Answers" is the specification. Used when no LLM is configured, when the provider fails, and when none of
 the model's claims has a citation that checks out. It can't say anything the passages don't, and every citation is
-its sentence's own span, so it passes the citation check by construction (and is checked anyway).
+its sentence's own span, so it passes the citation check by construction (a test checks that; answer() doesn't
+run the check on it).
 """
 
 from __future__ import annotations
