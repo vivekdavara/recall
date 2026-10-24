@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +14,13 @@ from test_retrieval import DOCS, load
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 from recall import db
 from recall.answer import ask, build_request
 from recall.api import Services, create_app, make_pool
 from recall.embedding import HashEmbedder
-from recall.llm import HAND_WRITTEN, Completion, RecordedProvider, write_recording
+from recall.llm import HAND_WRITTEN, Completion, RecordedProvider, Request, write_recording
 from recall.rerank import OverlapReranker
 
 QUESTION = "Which default values do skip and limit have?"
@@ -193,3 +194,63 @@ def test_no_database_is_a_503_that_says_nothing_of_the_url(monkeypatch: pytest.M
         for r in (c.post("/ask", json={"question": QUESTION}), c.get("/healthz")):
             assert r.status_code == 503
             assert "unavailable" in r.text and "secret" not in r.text and "127.0.0.1" not in r.text
+
+
+class PoolProbe:
+    """Takes a connection from the app's one-connection pool while a model runs. It gets one only if the request
+    running the model isn't holding the pool's only connection."""
+
+    def __init__(self) -> None:
+        self.pool: ConnectionPool | None = None
+        self.got: list[str] = []
+
+    def take(self, during: str) -> None:
+        assert self.pool is not None
+        try:
+            with self.pool.connection(timeout=0.5):
+                self.got.append(during)
+        except PoolTimeout:
+            self.got.append(f"no connection free during {during}")
+
+
+def probing_client(schema: str, probe: PoolProbe) -> TestClient:
+    class ProbingEmbedder(HashEmbedder):
+        def embed_query(self, text: str) -> list[float]:
+            probe.take("embedding")
+            return super().embed_query(text)
+
+    class ProbingReranker(OverlapReranker):
+        def score(self, question: str, texts: Sequence[str]) -> list[float]:
+            probe.take("reranking")
+            return super().score(question, texts)
+
+    class ProbingProvider:
+        name = "probe"
+
+        def complete(self, request: Request) -> Completion:
+            probe.take("the model call")
+            return Completion(json.dumps({"answerable": False, "claims": []}), HAND_WRITTEN)
+
+    def services() -> Services:
+        probe.pool = make_pool(TEST_DATABASE_URL, in_schema(schema), size=1)
+        return Services(ProbingEmbedder(), ProbingReranker(), ProbingProvider(), probe.pool)
+
+    return TestClient(create_app(services))
+
+
+def test_ask_holds_no_connection_while_a_model_runs(corpus: str):
+    # The day-3 review: /ask held its pooled connection through the LLM call, so four slow answers used up the pool of
+    # four and /search and /healthz failed with 503 "database unavailable" meanwhile.
+    probe = PoolProbe()
+    with probing_client(corpus, probe) as c:
+        r = c.post("/ask", json={"question": QUESTION})
+    assert r.status_code == 200 and r.json()["method"] == "none", r.text
+    assert probe.got == ["embedding", "reranking", "the model call"]
+
+
+def test_search_holds_no_connection_while_a_model_runs(corpus: str):
+    probe = PoolProbe()
+    with probing_client(corpus, probe) as c:
+        r = c.post("/search", json={"question": QUESTION, "rerank": True})
+    assert r.status_code == 200, r.text
+    assert probe.got == ["embedding", "reranking"]

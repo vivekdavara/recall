@@ -1,13 +1,15 @@
 """The HTTP API: POST /ask, POST /search and GET /healthz. The models load once, when the app starts.
 
 DESIGN.md "The API" is the specification. Handlers are plain functions, which FastAPI runs on its thread pool; each
-takes a connection from a small pool for the length of the request, and the models run one call at a time.
+takes a connection from a small pool for its database work only (not while a model runs), and the models run one call
+at a time.
 """
 
 from __future__ import annotations
 
 import os
 import threading
+import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
@@ -21,7 +23,7 @@ from psycopg_pool import ConnectionPool, PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from recall import db, retrieval
-from recall.answer import DEFAULT_PASSAGES, Answer, Timings, ask
+from recall.answer import DEFAULT_PASSAGES, Answer, Timings, respond, retrieve
 from recall.embedding import Embedder
 from recall.llm import Provider, provider_from_environment
 from recall.rerank import DEFAULT_DEPTH, Reranker, rerank
@@ -106,7 +108,10 @@ def services_from_environment() -> Services:
 
 
 def make_pool(
-    url: str, configure: Callable[[psycopg.Connection], None] | None = None, timeout: float = POOL_TIMEOUT
+    url: str,
+    configure: Callable[[psycopg.Connection], None] | None = None,
+    timeout: float = POOL_TIMEOUT,
+    size: int = POOL_SIZE,
 ) -> ConnectionPool:
     """Autocommit connections, as db.connect makes: every transaction is explicit. Opened without waiting, so the app
     starts while the database is down and answers 503 until it is up."""
@@ -114,7 +119,7 @@ def make_pool(
         url,
         kwargs={"autocommit": True, "application_name": "recall-api"},
         min_size=1,
-        max_size=POOL_SIZE,
+        max_size=size,
         timeout=timeout,
         configure=configure,
         open=True,
@@ -280,32 +285,62 @@ def create_app(make_services: Callable[[], Services] = services_from_environment
         if mode != "full-text" and state["models"].embedder is None:
             raise Unavailable(f"no embedding model is loaded, so only full-text search works, not {mode}")
 
+    def embed(mode: retrieval.Mode, question: str) -> list[float] | None:
+        """The question's vector, made before the handler takes a connection: the embedder waits its turn for the
+        model lock, and a request waiting there mustn't hold a connection another request could use."""
+        embedder = state["models"].embedder
+        return None if mode == "full-text" or embedder is None else embedder.embed_query(question)
+
     @app.post("/ask")
     def post_ask(body: AskRequest) -> dict[str, Any]:
         services: Services = state["services"]
         models: _OneAtATime = state["models"]
         needs_embedder(body.mode)
+        timings = Timings()
+        t = time.perf_counter()
+        query_vector = embed(body.mode, body.question)
         with connection() as conn:
-            result, timings = ask(
+            retrieved = retrieve(
                 conn,
                 body.question,
                 models.embedder,
-                models.reranker,
-                services.provider,
                 mode=body.mode,
                 passages=body.passages,
                 depth=body.depth,
                 candidates=body.candidates,
                 use_reranker=body.rerank,
+                timings=timings,
+                query_vector=query_vector,
             )
+        timings.retrieve = (time.perf_counter() - t) * 1000
+        # The connection is back in the pool: the reranker waits its turn for the model lock, and an LLM call can take
+        # seconds, so holding it through them let four slow answers use up the pool and fail /search and /healthz.
+        result = respond(
+            body.question,
+            retrieved,
+            models.reranker,
+            services.provider,
+            passages=body.passages,
+            use_reranker=body.rerank,
+            timings=timings,
+        )
         return _answer(result, timings)
 
     @app.post("/search")
     def post_search(body: SearchRequest) -> dict[str, Any]:
         models: _OneAtATime = state["models"]
         needs_embedder(body.mode)
+        query_vector = embed(body.mode, body.question)
         with connection() as conn:
-            hits = retrieval.search(conn, body.question, models.embedder, body.mode, body.k, candidates=body.candidates)
+            hits = retrieval.search(
+                conn,
+                body.question,
+                models.embedder,
+                body.mode,
+                body.k,
+                candidates=body.candidates,
+                query_vector=query_vector,
+            )
         if not body.rerank:
             return {"hits": [_hit(n, h) for n, h in enumerate(hits, 1)]}
         ranked = rerank(body.question, hits, models.reranker)

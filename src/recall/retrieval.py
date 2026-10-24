@@ -196,9 +196,11 @@ def search(
     k: int = DEFAULT_K,
     *,
     candidates: int = DEFAULT_CANDIDATES,
+    query_vector: Sequence[float] | None = None,
 ) -> list[Hit]:
-    """Retrieve with one mode, embedding the question when the mode needs it. The model check and the query run in
-    one transaction of their own, so the connection must not be inside a transaction already."""
+    """Retrieve with one mode, embedding the question when the mode needs it (unless `query_vector` is the embedder's
+    vector for it already: the API embeds before taking a connection). The model check and the query run in one
+    transaction of their own, so the connection must not be inside a transaction already."""
     if mode not in MODES:
         raise ValueError(f"mode must be one of {', '.join(MODES)}, not {mode!r}")
     if mode == "full-text":
@@ -208,7 +210,8 @@ def search(
     if conn.info.transaction_status != pq.TransactionStatus.IDLE:
         # Inside the caller's transaction, ours would be a savepoint, where SET TRANSACTION can't run.
         raise ValueError("search runs its own transaction: call it outside one")
-    query_vector = embedder.embed_query(question)
+    if query_vector is None:
+        query_vector = embedder.embed_query(question)
     # One snapshot for the check and the query: in two, an ingest with another model committing between them would
     # pair this question's vector with that model's vectors, the mix the check exists to refuse.
     with conn.transaction():

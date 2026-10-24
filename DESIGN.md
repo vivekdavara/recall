@@ -367,7 +367,10 @@ its sentences would look like an answer.
 
 The models load once, at startup (`services_from_environment`: `RECALL_EMBEDDER`, `RECALL_RERANKER`, `RECALL_LLM`). The
 handlers are plain functions, which FastAPI runs on its thread pool; each takes a connection from a pool (1 to 4
-autocommit connections, a 5 s wait) for the length of the request. Model calls run one at a time, under one lock:
+autocommit connections, a 5 s wait) for its database work only: the question is embedded before, and the reranker and
+the LLM run after the connection is returned (`answer.retrieve`, then `answer.respond`). Holding it through the model
+calls let four slow answers use up the pool, so /search and /healthz failed meanwhile (the day-3 review); a test runs
+the app with a one-connection pool and takes that connection during each model call. Model calls run one at a time, under one lock:
 PyTorch already spreads one call over the cores, so concurrent calls would mostly take turns, and Hugging Face's fast
 tokenizers have failed under concurrent use in the past ("Already borrowed"). It is a precaution: 320 concurrent calls
 from 8 threads without the lock raised nothing here (tokenizers 0.23.3).

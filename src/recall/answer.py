@@ -114,13 +114,79 @@ def load_documents(conn: psycopg.Connection, paths: Sequence[str]) -> dict[str, 
 class Timings:
     """Milliseconds spent in each step of ask()."""
 
-    retrieve: float = 0.0
+    retrieve: float = 0.0  # the search and reading the retrieved chunks' pages
     rerank: float = 0.0
     answer: float = 0.0
 
     @property
     def total(self) -> float:
         return self.retrieve + self.rerank + self.answer
+
+
+@dataclass(frozen=True)
+class Retrieved:
+    """What answering needs from the database: the retrieved chunks, best first, and the text of their pages."""
+
+    hits: tuple[Hit, ...]
+    documents: Mapping[str, str]
+
+
+def check_sizes(passages: int, depth: int, use_reranker: bool) -> None:
+    if passages < 1 or (use_reranker and passages > depth):
+        # depth is how many are reranked, so without the reranker it doesn't bound passages.
+        raise ValueError(f"passages must be from 1 to depth ({depth}), not {passages}")
+
+
+def retrieve(
+    conn: psycopg.Connection,
+    question: str,
+    embedder: Embedder | None,
+    *,
+    mode: retrieval.Mode = "hybrid",
+    passages: int = DEFAULT_PASSAGES,
+    depth: int = DEFAULT_DEPTH,
+    candidates: int = retrieval.DEFAULT_CANDIDATES,
+    use_reranker: bool = True,
+    timings: Timings | None = None,
+    query_vector: Sequence[float] | None = None,
+) -> Retrieved:
+    """The database half of ask(): `depth` chunks (or `passages`, without the reranker) and their pages. The pages of
+    every chunk are read, not only the top `passages`' pages, because which those are is known only after reranking,
+    and the reranker runs without a connection. Raises what retrieval.search raises."""
+    check_sizes(passages, depth, use_reranker)
+    t = time.perf_counter()
+    k = depth if use_reranker else passages
+    hits = retrieval.search(conn, question, embedder, mode, k, candidates=candidates, query_vector=query_vector)
+    documents = load_documents(conn, [h.path for h in hits])
+    if timings is not None:
+        timings.retrieve = (time.perf_counter() - t) * 1000
+    return Retrieved(tuple(hits), documents)
+
+
+def respond(
+    question: str,
+    retrieved: Retrieved,
+    reranker: Reranker,
+    provider: Provider | None,
+    *,
+    passages: int = DEFAULT_PASSAGES,
+    use_reranker: bool = True,
+    timings: Timings | None = None,
+) -> Answer:
+    """The model half of ask(), which needs no connection: rerank, keep the top `passages`, answer from them. The API
+    returns its pooled connection before this, so slow model calls can't use up the pool."""
+    hits = list(retrieved.hits)
+    if use_reranker:
+        t = time.perf_counter()
+        hits = [r.hit for r in rerank(question, hits, reranker, passages)]
+        if timings is not None:
+            timings.rerank = (time.perf_counter() - t) * 1000
+    t = time.perf_counter()
+    documents = {h.path: retrieved.documents[h.path] for h in hits if h.path in retrieved.documents}
+    result = answer(question, hits, provider, reranker, documents=documents)
+    if timings is not None:
+        timings.answer = (time.perf_counter() - t) * 1000
+    return result
 
 
 def ask(
@@ -136,21 +202,21 @@ def ask(
     candidates: int = retrieval.DEFAULT_CANDIDATES,
     use_reranker: bool = True,
 ) -> tuple[Answer, Timings]:
-    """Retrieve `depth` chunks (or `passages`, without the reranker), rerank them, and answer from the top `passages`.
-    Raises what retrieval.search raises (a model mismatch, a bad size, a database error)."""
-    if passages < 1 or (use_reranker and passages > depth):
-        # depth is how many are reranked, so without the reranker it doesn't bound passages.
-        raise ValueError(f"passages must be from 1 to depth ({depth}), not {passages}")
+    """Retrieve `depth` chunks (or `passages`, without the reranker), rerank them, and answer from the top `passages`:
+    retrieve() then respond(). Raises what retrieval.search raises (a model mismatch, a bad size, a database error)."""
     timings = Timings()
-    t = time.perf_counter()
-    hits = retrieval.search(conn, question, embedder, mode, depth if use_reranker else passages, candidates=candidates)
-    timings.retrieve = (time.perf_counter() - t) * 1000
-    if use_reranker:
-        t = time.perf_counter()
-        hits = [r.hit for r in rerank(question, hits, reranker, passages)]
-        timings.rerank = (time.perf_counter() - t) * 1000
-    t = time.perf_counter()
-    documents = load_documents(conn, [h.path for h in hits])
-    result = answer(question, hits, provider, reranker, documents=documents)
-    timings.answer = (time.perf_counter() - t) * 1000
+    retrieved = retrieve(
+        conn,
+        question,
+        embedder,
+        mode=mode,
+        passages=passages,
+        depth=depth,
+        candidates=candidates,
+        use_reranker=use_reranker,
+        timings=timings,
+    )
+    result = respond(
+        question, retrieved, reranker, provider, passages=passages, use_reranker=use_reranker, timings=timings
+    )
     return result, timings
