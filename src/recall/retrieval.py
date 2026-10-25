@@ -7,6 +7,7 @@ as CTEs of a single query and fuses their ranks in SQL, so it reads one snapshot
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -211,12 +212,22 @@ def check_model_name(conn: psycopg.Connection, name: str) -> None:
 
 
 def full_text(
-    conn: psycopg.Connection, question: str, k: int = DEFAULT_K, *, ranking: Ranking = "ts_rank_cd"
+    conn: psycopg.Connection,
+    question: str,
+    k: int = DEFAULT_K,
+    *,
+    ranking: Ranking = "ts_rank_cd",
+    k1: float = BM25_K1,
+    b: float = BM25_B,
 ) -> list[Hit]:
-    """The k chunks whose search vectors best match any of the question's words, by ts_rank_cd or BM25."""
+    """The k chunks whose search vectors best match any of the question's words, by ts_rank_cd or BM25 (with k1 and
+    b: scripts/sweep_bm25.py varies them)."""
     _check_sizes(k, k)
+    if not (math.isfinite(k1) and k1 >= 0 and 0 <= b <= 1):
+        raise ValueError(f"BM25 needs k1 >= 0 and b from 0 to 1, not {k1} and {b}")
     sql = f"WITH {_text_ctes(ranking)} SELECT {_HIT_COLUMNS}, f.score, f.rank, NULL FROM fts f {_JOIN} ORDER BY f.rank"
-    return _hits(conn, sql, {"question": question, "n": k, **_TEXT_LIMITS, **_BM25_PARAMS}, ef_search=None)
+    params = {"question": question, "n": k, **_TEXT_LIMITS, "k1": float(k1), "b": float(b)}
+    return _hits(conn, sql, params, ef_search=None)
 
 
 def vector(conn: psycopg.Connection, query_vector: Sequence[float], k: int = DEFAULT_K) -> list[Hit]:

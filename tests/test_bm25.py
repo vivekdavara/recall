@@ -249,3 +249,18 @@ def test_bm25_equals_the_reference_and_its_counts_equal_postgres_phrase_matches(
         matching = {r[0] for r in conn.execute("SELECT id FROM chunks WHERE search_vector @@ %s::tsquery", (phrase,))}
         counted = {c for c, v in vectors.items() if occurrences(v, lexemes) > 0}
         assert counted == matching, phrase
+
+
+def test_b_zero_ignores_length_and_k1_zero_ignores_repeats(conn: psycopg.Connection):
+    load(conn, [doc("short.md", "cookie value"), doc("long.md", "cookie " + " ".join(f"w{i}" for i in range(30)))])
+    flat = full_text(conn, "cookie", 10, ranking="bm25", b=0.0)
+    assert flat[0].score == pytest.approx(flat[1].score, rel=1e-12)
+    load(conn, [doc("once.md", "token here"), doc("thrice.md", "token token token")])
+    counted = full_text(conn, "token", 10, ranking="bm25", k1=0.0)
+    assert counted[0].score == pytest.approx(counted[1].score, rel=1e-12)  # tf * 1 / tf: each chunk scores idf
+
+
+@pytest.mark.parametrize(("k1", "b"), [(-0.1, 0.75), (1.2, -0.01), (1.2, 1.01), (math.inf, 0.5), (math.nan, 0.5)])
+def test_bm25_parameters_are_checked(conn: psycopg.Connection, k1: float, b: float):
+    with pytest.raises(ValueError, match="k1 >= 0 and b from 0 to 1"):
+        full_text(conn, "x", ranking="bm25", k1=k1, b=b)
