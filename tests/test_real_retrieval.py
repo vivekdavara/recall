@@ -84,8 +84,9 @@ def rank_of(hits: list[retrieval.Hit], page: str) -> int | None:
 def test_every_mode_finds_the_page_in_its_top_3(conn: psycopg.Connection, embedder: Any, question: str, page: str):
     for mode in retrieval.MODES:
         hits = retrieval.search(conn, question, embedder, mode, 10)
-        # Full-text returns only chunks holding a word of the question (6 hold response_model_exclude_unset).
-        assert len(hits) == 10 or (mode == "full-text" and hits)
+        # Full-text search (either ranking) returns only chunks holding a word of the question (6 hold
+        # response_model_exclude_unset).
+        assert len(hits) == 10 or (mode in retrieval.TEXT_MODES and hits)
         rank = rank_of(hits, page)
         assert rank is not None and rank <= 3, (mode, [h.path for h in hits])
 
@@ -100,18 +101,21 @@ def test_every_stored_vector_is_the_models_vector_for_its_passage(conn: psycopg.
 
 
 def reranked(conn: psycopg.Connection, question: str, embedder: Any, reranker: Any) -> list[retrieval.Hit]:
-    """Hybrid's top 20, reranked: what ask() answers from."""
+    """The default mode's top 20, reranked: what ask() answers from."""
     from recall.rerank import DEFAULT_DEPTH, rerank
 
     return [
-        r.hit for r in rerank(question, retrieval.search(conn, question, embedder, "hybrid", DEFAULT_DEPTH), reranker)
+        r.hit
+        for r in rerank(
+            question, retrieval.search(conn, question, embedder, retrieval.DEFAULT_MODE, DEFAULT_DEPTH), reranker
+        )
     ]
 
 
 def test_print_every_modes_rank_for_each_question(conn: psycopg.Connection, embedder: Any, reranker: Any):
     lines = [
-        "| question | page | full-text | vector | hybrid | hybrid + rerank |",
-        "|---|---|---|---|---|---|",
+        "| question | page | " + " | ".join(retrieval.MODES) + f" | {retrieval.DEFAULT_MODE} + rerank (ask) |",
+        "|---|---|" + "---|" * (len(retrieval.MODES) + 1),
     ]
     for question, page in ASSERTED + PRINTED_ONLY:
         ranks = [rank_of(retrieval.search(conn, question, embedder, m, 10), page) for m in retrieval.MODES]
