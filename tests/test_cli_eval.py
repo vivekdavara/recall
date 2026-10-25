@@ -55,8 +55,8 @@ def test_eval_prints_a_table_overall_and_by_kind(corpus: str, questions: Path, c
     assert "| system | n | recall@1 | recall@3 | recall@5 | recall@10 | recall@20 | MRR@20 |" in out
     assert "\nidentifier questions:\n" in out and "\nparaphrase questions:\n" in out
     # The paired counts are against ask's default.
-    assert "questions found only by each system / only by hybrid+rerank" in out
-    assert "| system vs hybrid+rerank | @1 | @5 | @10 |" in out
+    assert "questions found only by each system / only by vector+rerank" in out
+    assert "| system vs vector+rerank | @1 | @5 | @10 |" in out
     rows = [line for line in out.splitlines() if line.startswith("| full-text |")]
     assert rows[0].startswith("| full-text | 2 | ") and rows[1].startswith("| full-text | 1 | 1.000")
 
@@ -140,7 +140,7 @@ def test_eval_answers_checks_faithfulness_and_reports_it(
     report = tmp_path / "report.json"
     assert run(questions, "--systems", "full-text", "--answers", "--json", str(report)) == 0
     out = capsys.readouterr().out
-    assert "\nanswers (ask's defaults: hybrid, reranked, 5 passages; no LLM):\n" in out
+    assert "\nanswers (ask's defaults: vector, reranked, 5 passages; no LLM):\n" in out
     assert "| 2 | extractive 2 | " in out
     answers = json.loads(report.read_text())["answers"]
     assert answers["answers"] == 2 and answers["methods"] == {"extractive": 2}

@@ -179,11 +179,19 @@ def test_search(
     assert cli.main(["ingest", "--max-tokens", "4", "--embedder", "hash"]) == 0
     capsys.readouterr()
 
-    assert cli.main(["search", "x = 1", "--embedder", "hash", "-k", "2", "--width", "5"]) == 0
+    assert cli.main(["search", "x = 1", "--mode", "hybrid", "--embedder", "hash", "-k", "2", "--width", "5"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "1. tutorial/a.md#a  A"
     assert out[1].startswith("   score 0.0") and "(full-text #1, vector #" in out[1]
     assert out[2] in {"   x = 1", "   ```py..."} and len(out) == 6
+    # The default mode is vector (day 5's ablation).
+    assert cli.main(["search", "x = 1", "--embedder", "hash", "-k", "2"]) == 0
+    assert "(vector #1)" in capsys.readouterr().out.splitlines()[1]
+
+    # BM25 is full-text search too: no model.
+    monkeypatch.setattr(cli, "make_embedder", lambda kind: pytest.fail("loaded a model"))
+    assert cli.main(["search", "x", "--mode", "bm25"]) == 0
+    assert "(full-text #1)" in capsys.readouterr().out
 
     # Full-text search loads no model: an unusable one doesn't matter.
     monkeypatch.setattr(cli, "make_embedder", lambda kind: pytest.fail("loaded a model"))

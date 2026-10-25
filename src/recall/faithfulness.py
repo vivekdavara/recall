@@ -182,7 +182,8 @@ def answer_all(
     reranker: Reranker,
     provider: Provider | None,
 ) -> list[AnswerCheck]:
-    """Answer every question as ask() does by default (hybrid, reranked, 5 passages) and check each answer."""
+    """Answer every question as ask() does by default (retrieval.DEFAULT_MODE, reranked, 5 passages) and check each
+    answer."""
     checks = []
     for q in questions:
         result, _ = ask(conn, q.question, embedder, reranker, provider)

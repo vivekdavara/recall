@@ -108,6 +108,18 @@ def test_search_returns_hits_and_reranks_on_request(client: TestClient):
     assert [h["rerank_score"] for h in ranked] == sorted((h["rerank_score"] for h in ranked), reverse=True)
     full_text = client.post("/search", json={"question": QUESTION, "mode": "full-text"}).json()["hits"]
     assert all(h["vector_rank"] is None for h in full_text)
+    bm25 = client.post("/search", json={"question": QUESTION, "mode": "bm25"}).json()["hits"]
+    assert bm25 and all(h["vector_rank"] is None and h["full_text_rank"] for h in bm25)
+
+
+def test_the_default_mode_is_vector(client: TestClient):
+    # Day 5's ablation: vector alone beat every fusion; /search and /ask default to it.
+    hits = client.post("/search", json={"question": QUESTION, "k": 3}).json()["hits"]
+    assert hits and all(h["full_text_rank"] is None and h["vector_rank"] for h in hits)
+    explicit = client.post("/search", json={"question": QUESTION, "k": 3, "mode": "vector"}).json()["hits"]
+    assert hits == explicit
+    asked = client.post("/ask", json={"question": QUESTION}).json()["passages"]
+    assert asked and all(h["full_text_rank"] is None for h in asked)
 
 
 def test_healthz_reports_the_corpus_and_the_models(client: TestClient):
@@ -172,8 +184,9 @@ def test_vectors_from_another_model_are_a_503(corpus: str):
         assert r.status_code == 503 and "another-model" in r.json()["detail"]
         health = c.get("/healthz")
         assert health.status_code == 503 and health.json()["status"] == "unavailable"
-        # Full-text search needs no vectors.
+        # Full-text search needs no vectors, with either ranking.
         assert c.post("/search", json={"question": QUESTION, "mode": "full-text"}).status_code == 200
+        assert c.post("/search", json={"question": QUESTION, "mode": "bm25"}).status_code == 200
 
 
 def test_a_database_with_no_corpus_is_a_503(schema: str):

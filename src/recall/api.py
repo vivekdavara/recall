@@ -147,7 +147,7 @@ class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: Question
-    mode: retrieval.Mode = "hybrid"
+    mode: retrieval.Mode = retrieval.DEFAULT_MODE
     passages: int = Field(DEFAULT_PASSAGES, ge=1, le=MAX_PASSAGES, description="how many passages to answer from")
     depth: int = Field(DEFAULT_DEPTH, ge=1, le=MAX_DEPTH, description="how many retrieved chunks to rerank")
     candidates: int = Field(retrieval.DEFAULT_CANDIDATES, ge=1, le=retrieval.MAX_K)
@@ -169,7 +169,7 @@ class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: Question
-    mode: retrieval.Mode = "hybrid"
+    mode: retrieval.Mode = retrieval.DEFAULT_MODE
     k: int = Field(retrieval.DEFAULT_K, ge=1, le=retrieval.MAX_K)
     candidates: int = Field(retrieval.DEFAULT_CANDIDATES, ge=1, le=retrieval.MAX_K)
     rerank: bool = False

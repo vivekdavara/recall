@@ -310,14 +310,19 @@ def cmd_eval(args: argparse.Namespace) -> int:
     for kind in evaluation.KINDS:
         print(f"\n{kind} questions:\n")
         print(evaluation.table({s: kinds[kind] for s, kinds in result.by_kind.items()}))
-    against = "hybrid+rerank" if "hybrid+rerank" in result.ranks else systems[0]
+    # Every system against what ask does by default (its mode, reranked), when that was measured.
+    default = f"{retrieval.DEFAULT_MODE}+rerank"
+    against = default if default in result.ranks else systems[0]
     if len(result.ranks) > 1:
         print(f"\nquestions found only by each system / only by {against}, and the sign test's p:\n")
         print(evaluation.paired_table(result.ranks, against))
     body = result.to_json()
     if answers is not None:
         body["answers"] = answers.to_json()
-        print(f"\nanswers (ask's defaults: hybrid, reranked, {DEFAULT_PASSAGES} passages; {provider_name}):\n")
+        print(
+            f"\nanswers (ask's defaults: {retrieval.DEFAULT_MODE}, reranked, {DEFAULT_PASSAGES} passages;"
+            f" {provider_name}):\n"
+        )
         print(
             "| answers | methods | claims | supported claims | all claims supported | cites gold | gold in passages |\n"
             "|---:|---|---:|---:|---:|---:|---:|\n"
@@ -389,7 +394,7 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("migrate", help="apply the schema migrations").set_defaults(run=cmd_migrate)
     q = sub.add_parser("search", help="retrieve the chunks that best match a question")
     q.add_argument("question")
-    q.add_argument("--mode", choices=retrieval.MODES, default="hybrid")
+    q.add_argument("--mode", choices=retrieval.MODES, default=retrieval.DEFAULT_MODE)
     q.add_argument("-k", type=list_length, default=retrieval.DEFAULT_K, help="how many chunks (default %(default)s)")
     q.add_argument(
         "--candidates",
@@ -402,7 +407,7 @@ def parser() -> argparse.ArgumentParser:
     q.set_defaults(run=cmd_search)
     a = sub.add_parser("ask", help="answer a question with citations (the LLM by $RECALL_LLM, else extractive)")
     a.add_argument("question")
-    a.add_argument("--mode", choices=retrieval.MODES, default="hybrid")
+    a.add_argument("--mode", choices=retrieval.MODES, default=retrieval.DEFAULT_MODE)
     a.add_argument(
         "--passages", type=list_length, default=5, help="how many passages to answer from (default %(default)s)"
     )
