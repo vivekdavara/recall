@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "recall"
-version = "0.1.0"
+version = "1.0.0"
 description = "Retrieval-augmented question answering over a documentation set, with citations and an evaluation harness."
 readme = "README.md"
 license = "MIT"

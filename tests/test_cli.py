@@ -294,3 +294,16 @@ def test_search_refuses_another_models_vectors_before_loading_a_model(
     err = capsys.readouterr().err
     assert err.startswith("recall: the stored vectors are from hash-v1-384, not BAAI/bge-small-en-v1.5@")
     assert "search with the embedder that made them, or ingest again with this one" in err
+
+
+def test_the_version_is_the_packages(capsys: pytest.CaptureFixture[str]):
+    from importlib.metadata import version
+
+    from recall import __version__
+
+    with pytest.raises(SystemExit) as exit_:
+        cli.main(["--version"])
+    assert exit_.value.code == 0
+    assert capsys.readouterr().out == f"recall {__version__}\n"
+    # The installed package's metadata (pyproject.toml) and the module agree.
+    assert version("recall") == __version__ == "1.0.0"

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import psycopg
 
-from recall import chunking, db, retrieval
+from recall import __version__, chunking, db, retrieval
 from recall.corpus import fetch, source
 from recall.corpus.fetch import CorpusError
 from recall.corpus.load import load
@@ -368,6 +368,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="recall", description=__doc__)
+    p.add_argument("--version", action="version", version=f"recall {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     f = sub.add_parser("fetch", help="download the pinned corpus into $RECALL_DATA_DIR/corpus (default data/)")
