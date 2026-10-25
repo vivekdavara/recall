@@ -324,6 +324,13 @@ rerank 0.982 (0.778), hybrid-bm25 + rerank 0.964 (0.772). Paraphrases: full-text
 vector 0.455 (0.248), hybrid 0.255 (0.127), hybrid-bm25 0.309 (0.153), bm25 + rerank 0.073 (0.045), vector + rerank
 0.382 (0.196), hybrid + rerank 0.309 (0.160), hybrid-bm25 + rerank 0.273 (0.131).
 
+**On Linux** (CI's model job, run 40220131104 at `ca94ed0`, the gate's first run on the new baseline, 717.8 s): full-text,
+bm25 and the three hybrids identical to the Mac's; vector one question lower at 1, 3, 5 and 10 (0.345, 0.591, 0.618,
+0.718; MRR 0.482) and vector + rerank one lower at 3 and 5 (MRR 0.483), so a near-tie in the vectors' floats falls the
+other way there; answers with a gold chunk among their passages 56.4%, citing one 49.1%. "no worse than
+eval/baseline.json": the gate passed within its one-question slack, and vector still leads hybrid-bm25 at 10 (0.718
+against 0.627).
+
 **Paired comparisons** (from the report's ranks: questions with a gold chunk in the top k found only by A / only by B,
 and the exact two-sided sign test's p; `evaluation.paired`):
 
