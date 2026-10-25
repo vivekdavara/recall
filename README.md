@@ -2,8 +2,9 @@
 
 Retrieval-augmented question answering over a documentation set, with a citation for every claim and an evaluation
 harness that measures retrieval and answer faithfulness. PostgreSQL 17 does all the retrieval: pgvector (HNSW) for
-meaning, full-text search for exact words, fused by reciprocal rank fusion, then reranked by a small cross-encoder.
-Everything runs on a laptop CPU with no API key.
+meaning, full-text search ranked by BM25 in SQL for exact words, and the two fused by reciprocal rank fusion; a small
+cross-encoder reranks. The evaluation chose the default: vector search, reranked. Everything runs on a laptop CPU with
+no API key.
 
 [DESIGN.md](DESIGN.md) is the specification. [WALKTHROUGH.md](WALKTHROUGH.md) answers the questions an interviewer is
 likely to ask.
@@ -16,7 +17,7 @@ likely to ask.
 | 2 | Local embeddings in pgvector (HNSW), full-text retrieval, hybrid by reciprocal rank fusion, `recall search` | done |
 | 3 | A cross-encoder reranker, answers with checked citations (recorded LLM provider, extractive fallback), the API, `recall ask` | done |
 | 4 | The eval harness: 110 labelled questions, recall@k and MRR per system, faithfulness checks, a CI gate | done |
-| 5 | The ablation table, results, v1.0.0 | planned |
+| 5 | BM25 in SQL, the ablation table (nine systems), the default chosen from it (vector), v1.0.0 | done |
 
 ## Why it is built this way
 
@@ -27,7 +28,8 @@ likely to ask.
 - **The corpus is reproducible.** The archive's bytes aren't pinned (GitHub regenerates archives); the commit id the
   archive declares and the SHA-256 of each of the 421 files used are, so anyone gets the same corpus or an error.
 - **Measured, not asserted.** Day 4's harness turns "hybrid retrieval is better" into recall@k and MRR per retriever,
-  and CI fails when they drop. Its first run said hybrid is *not* better here (below).
+  and CI fails when they drop. Its first run said hybrid is *not* better here; day 5 fixed the full-text half (BM25:
+  MRR 0.175 to 0.379) and hybrid still didn't beat vector alone, so the default became vector (below).
 
 ## Architecture
 
@@ -38,7 +40,7 @@ flowchart LR
     C -->|chunk| D[1,503 chunks<br/>with spans]
     D -->|recall ingest| E[(PostgreSQL 17<br/>documents, chunks)]
     E -->|embed: bge-small on CPU;<br/>generated tsvector| F[pgvector HNSW +<br/>full-text GIN]
-    F -->|recall search| R[full-text, vector,<br/>hybrid by RRF]
+    F -->|recall search| R[vector, the default<br/>full-text by BM25 or ts_rank_cd<br/>hybrid by RRF]
     R -->|top 20| X[cross-encoder<br/>rerank]
     X -->|top 5| G{LLM provider<br/>recorded by default}
     G -->|claims| C[citation check:<br/>each quote in its passage]
@@ -61,13 +63,13 @@ src/recall/
   corpus/load.py          an extracted corpus to Documents
   ingest.py               documents, chunks and their vectors into PostgreSQL, idempotent, one transaction
   embedding.py            the Embedder interface, bge-small-en-v1.5 (pinned), a hash stub for tests
-  retrieval.py            full-text, vector, and hybrid (reciprocal rank fusion) retrieval, each one SQL query
+  retrieval.py            full-text (ts_rank_cd or BM25), vector, and hybrid (reciprocal rank fusion), each one SQL query
   rerank.py               the Reranker interface, the MiniLM cross-encoder (pinned), an overlap stub for tests
   llm.py                  the LLM provider interface: recorded (default), Claude (opt-in), the recorder
   citations.py            the answer's JSON schema and the citation check (each quote in its passage, exact spans)
   extractive.py           sentences outside code, and the extractive answer (the reranker's best sentences)
   answer.py               the prompt, answer() with its fallbacks, ask(): retrieve() then respond()
-  evaluation.py           questions, gold chunks from quotes, five systems, recall@k, MRR, the gate, the sign test
+  evaluation.py           questions, gold chunks from quotes, nine systems, recall@k, MRR, the gate, the sign test
   faithfulness.py         claims checked against the passages they cite; answers that cite gold
   api.py                  the FastAPI app: POST /ask, POST /search, GET /healthz
   db.py                   connections, migrations, pgvector's text form
@@ -78,6 +80,8 @@ scripts/token_fit.py      the chunks counted in the embedding model's own tokens
 scripts/measure_retrieval.py   HNSW against exact search, and each step's latency
 scripts/measure_answers.py     each answering step's latency, in-process or over HTTP
 scripts/sweep_fusion.py   hybrid across RRF k and candidates, on two halves of the questions
+scripts/sweep_bm25.py     BM25 across k1 and b, on two halves of the questions
+scripts/measure_full_text.py   full-text search's latency with each ranking
 eval/questions.jsonl      110 labelled questions (synthetic), each with gold quotes
 eval/baseline.json        the committed evaluation report that CI's gate compares with
 recordings/               recorded LLM responses (none yet: no key here; see its README)
@@ -97,7 +101,7 @@ scripts/pg.sh start            # the local cluster on port 5544: databases recal
 .venv/bin/recall show tutorial/query-params.md   # one page's chunks, with spans and heading paths
 .venv/bin/pip install -e '.[embed]'   # PyTorch and sentence-transformers, for the embedding model
 .venv/bin/recall ingest        # load and embed it into the recall database (runs the migrations; ~40 s on a laptop CPU)
-.venv/bin/recall search "how do I give a query parameter a default value?"   # hybrid; --mode full-text | vector
+.venv/bin/recall search "how do I give a query parameter a default value?"   # vector; --mode bm25 | hybrid-bm25 | ...
 .venv/bin/recall ask "How do I upload a file?"   # retrieve, rerank, answer with citations (--json: what /ask returns)
 .venv/bin/recall serve                           # the API on 127.0.0.1:8109 (models load once, ~5 s)
 curl -s localhost:8109/ask -H 'content-type: application/json' -d '{"question": "How do I upload a file?"}'
@@ -258,7 +262,7 @@ same numbers; recall@k is the share of questions with a gold chunk in the top k,
 | vector | 0.355 | **0.600** | **0.627** | **0.727** | **0.791** | **0.491** |
 | hybrid (RRF) | 0.264 | 0.382 | 0.473 | 0.591 | 0.718 | 0.357 |
 | vector + rerank | **0.391** | 0.545 | 0.573 | 0.682 | 0.791 | 0.487 |
-| hybrid + rerank (ask's default) | 0.382 | 0.518 | 0.555 | 0.645 | 0.718 | 0.469 |
+| hybrid + rerank (ask's default on day 4) | 0.382 | 0.518 | 0.555 | 0.645 | 0.718 | 0.469 |
 
 By kind, recall@10 (MRR@20): identifier questions: full-text 0.618 (0.335), vector 1.000 (0.732), hybrid 0.909
 (0.588), vector + rerank 0.964 (0.775), hybrid + rerank 0.982 (0.778); paraphrases: full-text 0.055 (0.016), vector
@@ -294,10 +298,103 @@ fusion setting needs a new baseline committed with it). The slack is needed: on 
 `f507a79`, 412.5 s) every number matched the Mac's except hybrid's recall@10, 0.582 (one question fewer), and
 vector + rerank's recall@1, 0.400 (one more), with its MRR 0.492; the gate passed.
 
+## Results (day 5, v1.0.0)
+
+Apple M3, macOS 26.6.2, Python 3.11.12, PostgreSQL 17.11 + pgvector 0.8.7, on battery (Low Power Mode off); the real
+corpus (1,503 chunks) and models; the same 110 synthetic questions as day 4.
+
+**The ablation** (`.venv/bin/recall eval --answers --json eval/baseline.json` at `8127f60`, 176.5 s; every score and
+rank the same as the first run at `ac9d86e`):
+
+| system | recall@1 | recall@3 | recall@5 | recall@10 | recall@20 | MRR@20 |
+|---|---:|---:|---:|---:|---:|---:|
+| full-text (ts_rank_cd) | 0.100 | 0.218 | 0.273 | 0.336 | 0.409 | 0.175 |
+| bm25 | 0.327 | 0.409 | 0.455 | 0.473 | 0.509 | 0.379 |
+| **vector** (the default mode) | 0.355 | **0.600** | **0.627** | **0.727** | **0.782** | **0.490** |
+| hybrid (RRF with ts_rank_cd) | 0.264 | 0.382 | 0.473 | 0.582 | 0.718 | 0.357 |
+| hybrid-bm25 | 0.364 | 0.509 | 0.564 | 0.627 | 0.718 | 0.448 |
+| bm25 + rerank | 0.355 | 0.455 | 0.464 | 0.509 | 0.509 | 0.407 |
+| **vector + rerank** (what `ask` does) | **0.391** | 0.545 | 0.573 | 0.673 | 0.782 | 0.485 |
+| hybrid + rerank (day 4's default) | 0.382 | 0.518 | 0.555 | 0.645 | 0.718 | 0.469 |
+| hybrid-bm25 + rerank | 0.373 | 0.500 | 0.536 | 0.618 | 0.718 | 0.451 |
+
+By kind, recall@10 (MRR@20). Identifier questions: full-text 0.618 (0.335), bm25 0.891 (0.725), vector 1.000 (0.732),
+hybrid 0.909 (0.588), hybrid-bm25 0.945 (0.744), bm25 + rerank 0.945 (0.769), vector + rerank 0.964 (0.775), hybrid +
+rerank 0.982 (0.778), hybrid-bm25 + rerank 0.964 (0.772). Paraphrases: full-text 0.055 (0.016), bm25 0.055 (0.033),
+vector 0.455 (0.248), hybrid 0.255 (0.127), hybrid-bm25 0.309 (0.153), bm25 + rerank 0.073 (0.045), vector + rerank
+0.382 (0.196), hybrid + rerank 0.309 (0.160), hybrid-bm25 + rerank 0.273 (0.131).
+
+**Paired comparisons** (from the report's ranks: questions with a gold chunk in the top k found only by A / only by B,
+and the exact two-sided sign test's p; `evaluation.paired`):
+
+| A vs B | @1 | @5 | @10 | @20 |
+|---|---:|---:|---:|---:|
+| bm25 vs full-text | 28 / 3 (< 0.001) | 22 / 2 (< 0.001) | 17 / 2 (< 0.001) | 16 / 5 (0.027) |
+| hybrid-bm25 vs hybrid | 17 / 6 (0.035) | 14 / 4 (0.031) | 9 / 4 (0.267) | 2 / 2 (1.000) |
+| vector vs hybrid-bm25 | 10 / 11 (1.000) | 12 / 5 (0.143) | 13 / 2 (0.007) | 7 / 0 (0.016) |
+| vector vs hybrid + rerank | 8 / 11 (0.648) | 10 / 2 (0.039) | 9 / 0 (0.004) | 8 / 1 (0.039) |
+| vector + rerank vs vector | 11 / 7 (0.481) | 6 / 12 (0.238) | 4 / 10 (0.180) | 0 / 0 (1.000) |
+| hybrid + rerank vs hybrid | 18 / 5 (0.011) | 13 / 4 (0.049) | 9 / 2 (0.065) | 0 / 0 (1.000) |
+
+**What it says.**
+
+- **BM25 fixes full-text search.** MRR@20 0.175 to 0.379; identifier questions' recall@10 0.618 to 0.891. ts_rank_cd's
+  missing IDF was the problem day 4 pointed at. Paraphrases stay out of reach of any word match (0.055 at 10 either way).
+- **It makes fusion better, but not better than vector alone.** hybrid-bm25 beats the ts_rank_cd hybrid at 1 and 5
+  (p ≈ 0.03) and ties vector there, but vector finds more at 10 (13 to 2, p = 0.007) and 20 (7 to 0). Vector finds a
+  gold chunk in the top 10 for every identifier question: embedding each passage with its heading path carries the
+  identifiers, so the full-text list adds little and RRF lets its misses push right vector hits down.
+- **The reranker doesn't help vector here** (no k with p below 0.18), though it helps the ts_rank_cd hybrid at 1 and 5.
+- **So the default mode is `vector`** (search, ask, the API), and `ask` keeps reranking: vector beats day 4's default at
+  5, 10 and 20, while the reranker's effect on vector is in neither direction distinguishable from chance. Vector led on
+  both halves of the question file (recall@10 0.782 / 0.673 against hybrid-bm25's 0.691 / 0.564).
+
+**BM25's parameters** (`.venv/bin/python scripts/sweep_bm25.py` at `fb5b504`, 26 s; the odd and even places in the
+question file scored separately; each cell recall@1, recall@5, recall@10, MRR@20). Flat: MRR@20 from 0.348 to 0.379
+over 25 settings, the textbook defaults tie the best, and none beats them on both halves. A few rows:
+
+| setting | odd places | even places | all |
+|---|---|---|---|
+| ts_rank_cd | 0.091 0.309 0.364 0.185 | 0.109 0.236 0.309 0.166 | 0.100 0.273 0.336 0.175 |
+| bm25, k1 0.5, b 0.0 | 0.291 0.491 0.545 0.377 | 0.309 0.382 0.418 0.344 | 0.300 0.436 0.482 0.360 |
+| bm25, k1 0.9, b 1.0 | 0.345 0.509 0.527 0.407 | 0.309 0.400 0.418 0.351 | 0.327 0.455 0.473 0.379 |
+| **bm25, k1 1.2, b 0.75** (default) | 0.345 0.509 0.527 0.406 | 0.309 0.400 0.418 0.352 | 0.327 0.455 0.473 0.379 |
+| bm25, k1 2.0, b 0.0 | 0.273 0.491 0.545 0.364 | 0.291 0.364 0.418 0.332 | 0.282 0.427 0.482 0.348 |
+| bm25, k1 2.0, b 0.5 | 0.327 0.473 0.527 0.389 | 0.327 0.400 0.436 0.355 | 0.327 0.436 0.482 0.372 |
+
+**What BM25 costs** (`.venv/bin/python scripts/measure_full_text.py --rounds 4` at `170089f`; the 110 questions' top
+20, the rankings alternating which goes first; on battery while another session's Spark job ran, load average 2.4 to
+2.5; ms):
+
+| ranking | p50 | p95 | max |
+|---|---:|---:|---:|
+| ts_rank_cd (four rounds) | 5.15 to 5.81 | 8.22 to 11.03 | 10.66 to 21.11 |
+| bm25 (four rounds) | 9.40 to 9.86 | 15.19 to 15.37 | 20.22 to 29.74 |
+
+About 1.8 times ts_rank_cd's median: BM25 unnests every matching chunk's vector in SQL to count phrase positions,
+where ts_rank_cd reads the vector in C. A first run of the same loop from a scratch script at `ac9d86e`, with nothing
+else running, gave medians of 9.1 ms and 3.9 to 4.6 ms.
+
+**Answers** (the same run as the ablation, `--answers`: each question answered as `recall ask` does now, vector +
+rerank, 5 passages): all 110 extractive (no recordings, no key), 330 claims, all lexically supported (true by
+construction for extractive claims). A gold chunk is among the 5 passages for 57.3% of the questions (day 4, hybrid +
+rerank: 55.5%), and 50.0% of answers cite one (the same as day 4).
+
+**Day 4's numbers moved by one question.** Vector's recall@20 is 0.782 here and was 0.791 on day 4, and hybrid's
+recall@10 0.582 against 0.591. Migration 003 rewrote the chunks table, which rebuilt the HNSW index; four questions'
+vector ranks moved by one, and one gold chunk went from 20th to 21st. For all four, today's ranks equal an exact scan's
+(checked with the index off): day 4's index had missed one closer chunk each time, which flattered vector at 20. CI on
+Linux had already shown hybrid's 0.582 on day 4.
+
+**Not measured today:** answer latency with vector as the default. The Mac was in dark wake (lid closed) for the first
+three hours of the session and another session's Spark job was running in the last hour, so a latency number would
+have measured those.
+
 ## Tests
 
-`make check` runs ruff, `mypy --strict` and pytest: 552 passed and 16 skipped at `713a52a` (30 s; the 16 are the
-real-model tests, run with `RECALL_REQUIRE_MODEL=1 pytest -m model`). In CI's test job
+`make check` runs ruff, `mypy --strict` and pytest: 651 passed and 16 skipped at `170089f` (35 s; the 16 are the
+real-model tests, run with `RECALL_REQUIRE_MODEL=1 pytest -m model`: 26 passed at `8127f60`, 48 s). Earlier: 552
+passed and 16 skipped at `713a52a` (day 4). In CI's test job
 the real-corpus tests and the cluster script's tests skip (220 passed, 9 skipped at `0777cfe`, line and branch coverage
 99%); the corpus and pg-script jobs run them.
 
@@ -349,6 +446,13 @@ the real-corpus tests and the cluster script's tests skip (220 passed, 9 skipped
   same, one question's slack, a two-question drop, MRR, other settings); `recall eval`'s tables, report and exit codes;
   faithfulness on hand-written claims (a wrong number, an invented parameter, unrelated words, citing the wrong passage,
   and a negation that passes: the check's known limit).
+- **BM25** (day 5, `tests/test_bm25.py`): every chunk's score against a reference written in Python from the vectors'
+  positions (hand-built corpora, and Hypothesis over 40 random corpora of stop words, identifiers with stop words inside,
+  repeated lexemes and hyphenated words), and the reference's phrase counts against PostgreSQL's own phrase match
+  (`@@`); the formula by hand for one word; IDF (a rare word outweighs a common one where ts_rank_cd counts them alike);
+  length; repeats; a stop word's gap; ties and the limit; both rankings matching the same chunks; the limits on
+  questions; the parameters' edge cases (b = 0, k1 = 0) and checks; the modes' dispatch, and hybrid-bm25 fusing the
+  BM25 list. Four mutants of the SQL, and the nine the review found surviving, each fail it.
 
 CI (GitHub Actions) has four jobs: lint, types and tests against a `pgvector/pgvector:pg17` service container; the
 corpus job, which downloads the pinned archive from GitHub, verifies it and runs the real-corpus tests; the pg-script
@@ -464,6 +568,32 @@ number across "," or "." applied to every word edge, so `OAuth2` wasn't found in
 real corpus sentence); and a minus sign was ignored ("-5" was the term "5"). Both fixed in `2e7337b`
 (`tests/review_d4c/`, 5 cases), with a table of found and not-found terms that kills its 12 listed mutants.
 
+## Review of day 5
+
+One agent reviewed the BM25 commit (`ac9d86e`, correctness framing, its own worktree, about 58 minutes of wall time,
+much of it with the Mac asleep). It found the SQL right: for 16,179 random words (URLs, emails, paths, versions,
+hyphens, apostrophes, quotes, numbers, stop words) the phrase built from `to_tsvector`'s offsets equals
+`phraseto_tsquery`'s exactly, and on 150 random corpora BM25's match set equals ts_rank_cd's and its scores equal the
+reference to 1e-9; day-1 and day-2 databases with data migrate forward cleanly. It found three defects, as failing tests
+(`tests/review_d5/`), each checked here to fail before its fix:
+
+- **CI's gate failed on `ac9d86e`**: the committed baseline lacked the nine systems and the `bm25` setting. CI had
+  already shown it (the model job was red on that push), and `002676a`'s new baseline fixed it.
+- **The gate could fail and name nothing**: a report without BM25 records `"bm25": null`, a day-4 baseline has no such
+  key, and `compare` judged the settings different with `!=` but listed the differing keys with `.get()`, which found
+  none: "the settings differ from the baseline's ()". A missing key now counts as a change (`170089f`).
+- **`search_length` drops positions past a lexeme's 255th** (a tsvector keeps no more), though migration 003's comment
+  said none were lost: the chunker's bound doesn't prevent it, since `x_x_..._x` is one of its tokens. BM25's tf is
+  capped alike. The comment and DESIGN now state the cap and a test pins it; no real chunk repeats a lexeme more than
+  23 times.
+
+Of its 27 mutations, 9 left the tests green; each now fails a test, run here as a mutant (`170089f`): `hybrid-bm25`
+mapped to ts_rank_cd, in `search` and in `rank_all` (the test corpus ranked the same either way; a new one where the
+rankings disagree); k1 and b (now pinned); the order of tied scores and which tie the limit cuts; and the settings a
+`hybrid-bm25`-only run records. Three more were equivalent (relabelled start positions, the word chosen among words
+with the same phrase, and deleting `SET EXPRESSION`, whose old expression is identical). Its docs points (stale counts
+and modes in README and WALKTHROUGH, DESIGN's lack of a BM25 section at that commit) are fixed.
+
 ## Design decisions
 
 - **FastAPI's docs as the corpus.** MIT-licensed, one subject, many near-duplicate passages that differ in detail, and
@@ -507,6 +637,14 @@ real corpus sentence); and a minus sign was ignored ("-5" was the term "5"). Bot
   a failed or unusable model answer still gives an answer whose every claim is a span, with the reason the model's
   wasn't used. When the model says the passages don't answer, there is no answer: extractive sentences would look
   like one.
+- **BM25 in SQL, from the search vectors** (day 5). No extension and no second index: tf comes from the tsvector's
+  positions, df from the tf rows, the length from a generated column. It costs about 1.8 times ts_rank_cd's time at
+  this size and stays one query, so hybrid-bm25 is still one snapshot and one round trip.
+- **A phrase per question word is one BM25 term** (day 5). Identifiers stay whole: `response_model_exclude_unset`
+  scores by its own rarity, not by "response" and "model".
+- **The default chosen by the evaluation, and only where it is clear** (day 5). Vector replaced hybrid + rerank because
+  the paired counts say so at 5, 10 and 20; the reranker stayed because they don't say anything about it over vector.
+  The other modes stay available for corpora where exact words matter more.
 - **The API runs model calls one at a time.** PyTorch already uses every core for one call, so the CPU is the limit
   either way; and it doesn't rely on the tokenizers being thread-safe (320 concurrent calls without the lock raised
   nothing here, so it is a precaution). A pool of four connections serves the requests.
@@ -518,9 +656,13 @@ real corpus sentence); and a minus sign was ignored ("-5" was the term "5"). Bot
 - Normalization is written for FastAPI's documentation build; another corpus needs its own rules.
 - The token measure approximates the embedding model's tokens; a code-heavy chunk can have more model tokens. One
   passage (a base64 PNG in a code block) is truncated by the model.
-- Full-text ranking is ts_rank_cd, which has no inverse document frequency: on the labelled set it finds a gold chunk
-  in its top 10 for 34% of questions, and fusing it in makes hybrid worse than vector alone (day 4). Day 5 measures
-  IDF (BM25-style) weighting; until then `ask` still defaults to hybrid.
+- The default (vector + rerank) was chosen on 110 synthetic questions about one corpus. Where users ask with exact
+  identifiers the embedding doesn't capture, `bm25` or `hybrid-bm25` may be the better default; the evaluation is the
+  way to find out.
+- BM25 here has no field weights (a title word counts like any other; ts_rank_cd's A/B/D weights don't apply), and it
+  counts at most 255 positions of one lexeme in a chunk. It takes about 1.8 times ts_rank_cd's time, because it reads
+  the matching chunks' positions in SQL; a much bigger corpus would want a positional inverted index or a native BM25.
+- The fusion settings (RRF k = 60, 50 candidates) were swept only with ts_rank_cd's list (day 4); with BM25's, not yet.
 - The labelled questions are synthetic: 110 written by one model from the pages, half of them deliberately avoiding
   their answer's words. They measure the retrievers against each other on this corpus, not what users would see.
 - Faithfulness is checked lexically (content words and exact terms in the cited passages): a claim that says the
@@ -541,7 +683,7 @@ real corpus sentence); and a minus sign was ignored ("-5" was the term "5"). Bot
 - Extractive answers are the passages' own sentences, chosen one by one and listed best first: correct spans, but not
   prose, and a sentence that only makes sense after the one before it can be chosen alone.
 - Sentence splitting is a few rules (end punctuation, a handful of abbreviations), not a trained splitter.
-- Reranking reorders hybrid's top 20 only: a page retrieval ranks lower can't be recovered.
+- Reranking reorders the retrieved top 20 only: a page retrieval ranks lower can't be recovered.
 - The API serializes model calls, so its throughput is one embed-and-rerank at a time.
 - Ingest embeds inside its one transaction: a first ingest holds it for about 40 s on a laptop CPU.
 - The local cluster uses trust authentication on localhost; it is for development only.
