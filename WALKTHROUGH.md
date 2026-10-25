@@ -2,15 +2,18 @@
 
 Questions an interviewer is likely to ask about Recall, with short answers grounded in the code. Day 1 covers the
 corpus, normalization, chunking, storage and ingest; day 2 embeddings and retrieval; day 3 reranking, answers with
-citations and the API; later days add their own sections.
+citations and the API; day 4 the evaluation; day 5 BM25, the ablation and the default chosen from it (v1.0.0).
+
+If there's time for only one section, read "BM25 and the default (day 5)": it is the whole project in miniature (a
+hypothesis, a measurement that disagreed with it, a fix, and a default changed only as far as the evidence went).
 
 ## The project
 
 **What is Recall?**
 A question-answering system over FastAPI's documentation that cites the passages it used. Retrieval is PostgreSQL 17
-alone: pgvector for meaning, full-text search for exact words, combined by reciprocal rank fusion and reranked by a
-cross-encoder (days 2 and 3). An evaluation harness (day 4) measures recall@k, MRR and faithfulness, and CI fails if
-retrieval gets worse.
+alone: pgvector for meaning, full-text search ranked by BM25 for exact words, either or both (fused by reciprocal rank
+fusion), then a cross-encoder reranks (days 2, 3 and 5). An evaluation harness (day 4) measures recall@k, MRR and
+faithfulness, CI fails if retrieval gets worse, and it chose the default: vector search, reranked (day 5).
 
 **What did day 1 build?**
 Everything before retrieval: fetching a pinned corpus and proving it is the right one (`corpus/fetch.py`), turning
@@ -400,8 +403,8 @@ where and why without the input (`test_a_question_with_a_lone_surrogate_is_a_422
 ## Evaluation (day 4)
 
 **How do you know retrieval works?**
-`recall eval` runs 110 labelled questions through five systems (full-text, vector, hybrid, and the vector and hybrid
-lists reranked) and reports recall@k (the share of questions with a gold chunk in the top k) and MRR over the top 20,
+`recall eval` runs 110 labelled questions through five systems on day 4 (full-text, vector, hybrid, and the vector
+and hybrid lists reranked; nine since day 5) and reports recall@k (the share of questions with a gold chunk in the top k) and MRR over the top 20,
 overall and per kind of question. CI's model job runs it on the real corpus with the real models and fails if any
 system drops by more than one question's worth below the committed `eval/baseline.json`.
 
@@ -424,7 +427,7 @@ top 10 for only 34% of questions, 62% even of the identifier ones, because ts_ra
 word, and RRF pulls its poor matches into the fused list. The reranker recovers some of it at rank 1 for hybrid, not
 for vector.
 
-**So why is hybrid still the default?**
+**So why was hybrid still the default on day 4?**
 Because the sweep of the fusion settings (`scripts/sweep_fusion.py`) says the fault is the full-text list, not the
 fusion: no RRF k or candidate count beats vector alone on either half of the questions. Swapping the default to vector
 on 110 synthetic questions, half of them written to defeat keyword search, would be tuning to the test. Day 5 measures
@@ -455,6 +458,79 @@ A drop of one question per metric, by design: float differences between machines
 compare results under other settings (the question file's SHA-256, the corpus commit, the chunker and chunk count, the
 models, depth, candidates, RRF k), so a change to any of those needs a new baseline committed with it, where a reviewer
 sees the numbers move.
+
+## BM25 and the default (day 5)
+
+**What did day 5 build?**
+BM25 ranking for full-text search, in SQL (`_BM25` in `retrieval.py`, `migrations/003_bm25.sql`), as two new modes:
+`bm25` and `hybrid-bm25`. Then the ablation: nine systems on the 110 labelled questions (the five modes, four of them
+reranked), and the default retrieval mode chosen from it: `vector` (`retrieval.DEFAULT_MODE`). Then the release:
+`CHANGELOG.md`, `recall --version`, v1.0.0.
+
+**Why did ts_rank_cd do so badly?**
+It scores how often and how close together the query's words occur, with weights for title and headings, but it has
+no inverse document frequency: "response" (in hundreds of chunks) counts as much as "lifespan" (in a handful). The
+query ORs every word of the question, so the chunks that repeat the common words win. BM25 multiplies each term by
+its IDF and saturates repeats (`k1`), and discounts long chunks (`b`).
+
+**How do you compute BM25 inside PostgreSQL?**
+From the search vectors themselves. The question's words become the same phrases full-text search already uses (the
+`phrases` CTE both rankings share). For each phrase, `to_tsvector` of its word gives its lexemes and their offsets
+(`skip_the_limit`: `skip` at 0, `limit` at 2, because the stop word keeps its place). For each matching chunk,
+`unnest(search_vector)` gives each lexeme's positions; grouping by phrase and start position (position minus offset),
+a start that all of the phrase's lexemes reach is one occurrence: that count is tf. df is the number of chunks with a tf
+row, and the chunk's length is a stored generated column, `search_length`. Then it is the formula, summed per chunk.
+
+**Why is a phrase one term, not its lexemes?**
+Because identifiers are phrases to the parser: `response_model_exclude_unset` is four lexemes, and as four separate
+terms every chunk about response models would score on "respons" and "model". As one phrase, only chunks holding the
+identifier score, and its IDF is the identifier's rarity, which is what makes it a good query term.
+
+**Why a generated column, and why change the search vector's expression to do it?**
+BM25 needs each chunk's length, and the average over all chunks on every query; computing it from 1,503 vectors per
+query would cost more than the ranking. A generated column can't read another generated column, so the vector's
+expression became a function and both columns are generated from it. PostgreSQL 17's `ALTER COLUMN ... SET
+EXPRESSION` does that in place (it rewrites the table).
+
+**How do you know the SQL is right?**
+`tests/test_bm25.py` has a reference implementation in Python, from the vectors' positions read out of the database,
+and compares every chunk's score to 1e-9 on hand-built corpora and on 40 random ones (Hypothesis, words chosen to
+make stop-word gaps, repeated lexemes and hyphenated words). The same test checks the reference's own phrase counts
+against PostgreSQL's phrase operator (`@@`): a chunk has tf > 0 exactly when Postgres says it holds the phrase. And
+four mutants of the SQL (the HAVING, the offset, the IDF's constant, the average length) each fail it.
+
+**What did BM25 change?**
+Full-text recall@10 went from 0.336 to 0.473 and MRR from 0.175 to 0.379; on identifier questions recall@10 from 0.618
+to 0.891. At rank 1 BM25 finds 28 questions ts_rank_cd misses and misses 3 it finds. Paraphrases didn't move (0.055 at
+10): no word-matching scheme finds a passage that shares no words with the question.
+
+**So why isn't the default hybrid-bm25?**
+Because vector alone still beats it: level at ranks 1 and 5, ahead at 10 (13 questions found only by vector, 2 only by
+hybrid-bm25, sign test p = 0.007) and at 20 (7 to 0). BM25 made fusion better (17 to 6 over the ts_rank_cd hybrid at
+rank 1) but not good enough to add anything vector misses. On this corpus the embedded heading paths carry the
+identifiers too: vector finds a gold chunk in the top 10 for every identifier question.
+
+**And why keep the reranker?**
+Over vector it changes nothing the questions can distinguish from chance: 11 to 7 at rank 1, 6 to 12 at 5, every p
+0.18 or more. Flipping a default on noise in either direction would be tuning to these 110 questions, so the default
+changed only where the evidence is clear (vector over every fusion) and the reranker stays.
+
+**Isn't choosing the default on the same questions you report tuning to the test?**
+Less than tuning a parameter would be: it is a choice among five modes, and vector led on both halves of the question
+file (recall@10 0.782 and 0.673, against hybrid-bm25's 0.691 and 0.564). The BM25 parameters were swept on the halves
+the same way (`scripts/sweep_bm25.py`): the surface is flat (MRR 0.348 to 0.379 over 25 settings) and the textbook
+defaults tie the best, so nothing was tuned. The honest limit is that the questions are synthetic and from one writer.
+
+**What does BM25 cost?**
+About 1.8 times ts_rank_cd's time: a median of 9.4 to 9.9 ms against 5.2 to 5.8 ms for a top 20 on the real corpus
+(`scripts/measure_full_text.py`, four rounds), because it unnests the matching chunks' vectors in SQL where ts_rank_cd
+reads them in C. At 1,503 chunks that is fine; at a
+million it would want an inverted index of positions, or an extension that implements BM25 natively.
+
+**What would you try next?**
+Field weights (BM25F: the title and headings count for more), a smaller RRF k with the BM25 list (day 4's sweep
+found k = 1 helped the old hybrid), and questions from real users. With an API key, recorded model answers would make
+the faithfulness numbers mean something.
 
 ## The reviews
 
@@ -509,6 +585,37 @@ were caught; the two that weren't (deleting a page exclusion) exposed a test tha
 `source.EXCLUDED_PAGES` itself, so deleting an exclusion deleted its test case too. The test has its own list now. Two
 of the review's survivors were dead code, which I removed, and one is `load`'s "only files in the manifest" check,
 which `verify` makes unreachable.
+
+## What went wrong on day 5
+
+**What did the review of BM25 find?**
+That the SQL was right, which it checked hard: 16,179 random tokens' phrases against PostgreSQL's own, and 150 random
+corpora's scores against the reference. The defects were around it. The gate could fail with "the settings differ
+()", naming nothing: a report without BM25 records `"bm25": null`, an older baseline has no such key, and `compare`
+tested the settings with `!=` (different) but listed differing keys with `.get()` (equal). And migration 003's comment
+said a tsvector's 256-position cap loses nothing because chunks are short; but the chunker counts `x_x_..._x` as one
+token, so a chunk can hold one lexeme 300 times and only 255 are kept. That's a documented limit now, not a fix: the
+positions are gone before BM25 sees them.
+
+**And the tests it showed missing?**
+Nine mutants survived. The telling one: mapping `hybrid-bm25` to ts_rank_cd left every test green, because my test
+corpus ranked the same under both rankings, so "it fused the BM25 list" was never actually observed. The new test uses
+a corpus where the two rankings disagree on the top chunk. Same lesson as the constants: tests that import `BM25_K1`
+can't notice it changing, so one test pins the specified values.
+
+**Tell me about a mistake you made.**
+I pushed the BM25 commit without running the real-model tests, which only run in CI's model job, and without a new
+baseline. CI's model job went red twice over: a smoke test allowed short lists only for `full-text`, so `bm25` failed
+it, and the gate refused the old baseline's settings. Both were fixed in the next push (`002676a`), and I ran
+`RECALL_REQUIRE_MODEL=1 pytest -m model` locally first. Also one commit was chained on `make check | tail`, whose
+status is tail's; its output showed lint and every test passing, but that's the day-1 mistake again, and later
+commits were chained on `make check` alone.
+
+**What surprised you?**
+That day 4's best number was slightly flattered. Migration 003 rewrote the table, which rebuilt the HNSW index, and
+vector's recall@20 fell from 0.791 to 0.782. The four questions whose ranks moved now match an exact scan: day 4's
+index had missed one closer chunk each time, which happened to push a gold chunk into the top 20. Approximate search
+can err in your favour too, and only an exact comparison tells you which way.
 
 ## What went wrong on day 4
 

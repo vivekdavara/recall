@@ -292,8 +292,9 @@ holds a phrase matches the OR query, so `df` is counted from the `tf` rows and c
 heading weights (A, B) don't enter BM25: a title word counts once per occurrence, like any other (a field-weighted
 BM25F is a possible next step). `tests/test_bm25.py` checks the scores against a reference written in Python from the
 vectors' positions, and its phrase counts against PostgreSQL's own phrase match (`@@`) on random corpora. A query takes
-9.1 ms at the median against ts_rank_cd's 3.9 to 4.6 (110 questions' top 20, two passes each, on the real corpus):
-BM25 unnests the matching chunks' vectors, ts_rank_cd reads them in C.
+9.4 to 9.9 ms at the median against ts_rank_cd's 5.2 to 5.8 (`scripts/measure_full_text.py`: 110 questions' top 20,
+four rounds, on the real corpus; README "Results (day 5, v1.0.0)"): BM25 unnests the matching chunks' vectors, ts_rank_cd
+reads them in C.
 
 **Vector.** `ORDER BY embedding <=> question LIMIT n` through the HNSW index, with row numbers taken outside that
 subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan picks at most
