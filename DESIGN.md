@@ -1,14 +1,15 @@
 # Recall: design
 
 Recall answers questions about a documentation set and cites the passages it used. It retrieves passages with
-PostgreSQL 17 alone: pgvector (an HNSW index over local embeddings) for meaning, Postgres full-text search for exact
-words, and reciprocal rank fusion to combine the two. A small cross-encoder reranks the fused list, and an answer is
-written from the top passages with a citation for each claim. An evaluation harness measures retrieval (recall@k,
-MRR) and answer faithfulness on labelled questions, and CI fails when retrieval gets worse.
+PostgreSQL 17 alone: pgvector (an HNSW index over local embeddings) for meaning, Postgres full-text search ranked by
+BM25 (or ts_rank_cd) for exact words, and reciprocal rank fusion to combine the two. A small cross-encoder reranks the
+retrieved list, and an answer is written from the top passages with a citation for each claim. An evaluation harness
+measures retrieval (recall@k, MRR) and answer faithfulness on labelled questions, and CI fails when retrieval gets
+worse. The default retrieval is vector search, chosen by that evaluation.
 
 This file is the specification. Day 1 built the corpus, its normalization and chunking, the storage schema and the
 local database; day 2 the embeddings, full-text search, vector search and their fusion; day 3 the reranker, answers
-with checked citations, and the API. The sections for later days say what they will add and are marked so.
+with checked citations, and the API; day 4 the evaluation; day 5 BM25, the ablation and the default chosen from it.
 
 ## Goals and non-goals
 
@@ -213,6 +214,14 @@ Day 2's migration (`002_retrieval.sql`) adds:
 A day-1 database migrates in place: its chunks keep their ids, get their search vectors at once, and the next ingest
 embeds them.
 
+Day 5's migration (`003_bm25.sql`) adds `chunks.search_length`, BM25's document length: the number of lexeme
+positions in the search vector (a lexeme three times counts three; stop words aren't lexemes). A generated column can't
+read another generated column, and a copy of the vector's expression could drift from it, so the expression becomes a
+function, `chunk_search_vector(heading_path, content)`, and both columns are generated from it (PostgreSQL 17's `ALTER
+COLUMN ... SET EXPRESSION` changes the existing one; the table is rewritten). A tsvector keeps at most 256 positions
+of one lexeme; chunks hold at most a few hundred words (154 lexemes at most on this corpus, 60.8 on average), so
+none are lost.
+
 ## Embeddings
 
 **The model.** `BAAI/bge-small-en-v1.5` (MIT license), 384 dimensions, 33.4M parameters, a 133 MB weights file, run on the CPU through
@@ -243,8 +252,10 @@ another model than the one embedding the question: they would be compared in dif
 
 ## Retrieval
 
-`recall.retrieval` has three retrievers, each one SQL query, and `search`, which picks one, embeds the question when
-needed and checks the model. Each returns `Hit`s: the chunk, its page, title, URL with the section's anchor, heading
+`recall.retrieval` has three retrievers, each one SQL query, and `search`, which picks one of five modes, embeds the
+question when needed and checks the model: `full-text` and `bm25` (full-text search ranked by ts_rank_cd or by BM25),
+`vector`, and `hybrid` and `hybrid-bm25` (the vector list fused with either full-text list). The default is `vector`
+(`DEFAULT_MODE`), chosen by day 5's ablation ("Evaluation"). Each returns `Hit`s: the chunk, its page, title, URL with the section's anchor, heading
 path, span, score, and its rank in each retriever's list.
 
 **Full-text.** The question is split at whitespace; each word becomes `phraseto_tsquery('english', word)` and the words
@@ -259,7 +270,28 @@ weights (1.0, 0.4, 0.1) and normalization 1 (divided by 1 + log of the chunk's l
 counts how often and how close together the words occur but has no inverse document frequency, so a common word
 ("return", "response") counts as much as a rare one. Day 4's labelled set measured the cost: full-text finds a gold
 chunk in its top 10 for 34% of the questions (vector 73%), and fusing its list in makes hybrid worse than vector alone
-("Evaluation"). Day 5 measures BM25-style IDF weighting against it.
+("Evaluation").
+
+**BM25** (day 5) ranks the same matches (the same phrases, OR query and limits; a CTE, `phrases`, both rankings share)
+by Robertson's BM25 with each phrase a term:
+
+    score = sum over the question's phrases of  idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * length / average length))
+    idf   = ln(1 + (N - df + 0.5) / (df + 0.5))
+
+with `k1` = 1.2 and `b` = 0.75 (the usual defaults; Lucene's), `tf` how often the phrase occurs in the chunk, `df` how
+many of the `N` chunks it occurs in, and `length` the chunk's `search_length`. The IDF is Lucene's form, which is
+never negative (Robertson's original goes negative for a term in more than half the documents). All of it comes from
+the search vectors' positions, in SQL: a phrase occurs at a start position when each of its lexemes is at its offset
+from there, and the offsets come from `to_tsvector` of the word the phrase was made from, which numbers a word's
+lexemes as `phraseto_tsquery` spaces them (`skip_the_limit` is `skip` at 0 and `limit` at 2: the stop word keeps its
+place). A chunk's positions of one lexeme are distinct, so a start reached by as many lexeme positions as the phrase
+has lexemes has all of them; a phrase that repeats a lexeme (`data_data`) is counted at each start. Every chunk that
+holds a phrase matches the OR query, so `df` is counted from the `tf` rows and can't disagree with them. The title and
+heading weights (A, B) don't enter BM25: a title word counts once per occurrence, like any other (a field-weighted
+BM25F is a possible next step). `tests/test_bm25.py` checks the scores against a reference written in Python from the
+vectors' positions, and its phrase counts against PostgreSQL's own phrase match (`@@`) on random corpora. A query takes
+9.1 ms at the median against ts_rank_cd's 3.9 to 4.6 (110 questions' top 20, two passes each, on the real corpus):
+BM25 unnests the matching chunks' vectors, ts_rank_cd reads them in C.
 
 **Vector.** `ORDER BY embedding <=> question LIMIT n` through the HNSW index, with row numbers taken outside that
 subquery so the index can still serve it (an `EXPLAIN` test checks). HNSW is approximate. An HNSW scan picks at most
@@ -274,7 +306,8 @@ entries of rows an ingest updated or deleted until VACUUM, so after a model chan
 (found by the day-2 review). Each query also turns on pgvector's iterative scan (`hnsw.iterative_scan =
 strict_order`), which keeps searching until the LIMIT is met, in distance order.
 
-**Hybrid.** Both retrievers' top `candidates` (default 50) as two CTEs of one query, fused by reciprocal rank fusion
+**Hybrid.** Both retrievers' top `candidates` (default 50; the full-text list by ts_rank_cd in `hybrid`, by BM25 in
+`hybrid-bm25`) as CTEs of one query, fused by reciprocal rank fusion
 (Cormack, Clarke and Buettcher, 2009): score = the sum, over the lists a chunk is in, of 1 / (60 + rank). One query
 means one snapshot and one round trip. RRF uses ranks, not scores, so it needs no calibration between ts_rank_cd and
 cosine similarity; its known cost is that a chunk both lists rank moderately beats one that only one list ranks high
@@ -282,14 +315,15 @@ cosine similarity; its known cost is that a chunk both lists rank moderately bea
 0.03125). Ties go to the lower chunk id, so results repeat. `candidates` bounds how deep in one list a chunk can be and
 still be fused in.
 
-`recall search QUESTION --mode hybrid|full-text|vector -k 10` prints the hits; full-text search loads no model.
+`recall search QUESTION --mode vector|bm25|hybrid-bm25|full-text|hybrid -k 10` prints the hits (default `vector`); full-text
+search, with either ranking, loads no model.
 
 ## Reranking
 
 A cross-encoder reads the question and a passage together and scores how well the passage answers it. The
 retrievers can't: each embeds or matches the question and the passages apart. Reading every pair is one pass of
-the model each, too slow for the whole corpus, so it reranks only the top of the fused list: `ask` retrieves
-hybrid's top 20 (`DEFAULT_DEPTH`) and answers from the reranked top 5. A chunk is scored with its heading path above
+the model each, too slow for the whole corpus, so it reranks only the top of the retrieved list: `ask` retrieves the
+default mode's (vector's) top 20 (`DEFAULT_DEPTH`) and answers from the reranked top 5. A chunk is scored with its heading path above
 it, as it was embedded (`passage_text`).
 
 **The model.** `cross-encoder/ms-marco-MiniLM-L6-v2` (Apache-2.0), a 6-layer MiniLM trained on MS MARCO passage
@@ -404,17 +438,18 @@ overlaps a gold quote, found in the database each time the evaluation runs (`gol
 re-ingesting doesn't invalidate the labels; a quote that is no longer in its page exactly once, or lies only in a
 heading line (headings aren't chunk text), fails the run with every such problem listed.
 
-**Systems.** Each ranks the top 20 for every question: `full-text`, `vector`, `hybrid` (RRF of the two),
-`vector+rerank` and `hybrid+rerank` (the vector or hybrid top 20 reordered by the cross-encoder; hybrid+rerank is
-exactly what `ask` reranks by default). 20 is the reranker's depth, so recall@20 is the same with and without the
-reranker by construction. Each question is embedded once for all systems.
+**Systems.** Each ranks the top 20 for every question. Nine: the five retrieval modes (`full-text`, `bm25`, `vector`,
+`hybrid`, `hybrid-bm25`) and four of them reranked (`bm25+rerank`, `vector+rerank`, `hybrid+rerank`,
+`hybrid-bm25+rerank`: the mode's top 20 reordered by the cross-encoder; `vector+rerank` is exactly what `ask` does by
+default). 20 is the reranker's depth, so recall@20 is the same with and without the reranker by construction. Each
+question is embedded once, and each mode's list retrieved once, for all the systems.
 
 **Metrics.** **recall@k**: the share of questions with a gold chunk in the top k (gold items are alternatives, so one
 is enough), for k = 1, 3, 5, 10, 20. **MRR@20**: the mean over questions of 1 / the rank of the first gold chunk, 0
 when none is in the top 20. Both overall and per kind. The report (`--json`) holds the settings, the scores and every
 question's rank in every system, so a change can be traced to the questions it moved.
 
-**Faithfulness** (`--answers`). Every question is answered as `recall ask` answers it (hybrid, reranked, 5 passages, the
+**Faithfulness** (`--answers`). Every question is answered as `recall ask` answers it (vector, reranked, 5 passages, the
 provider `RECALL_LLM` names), and each claim is checked against the passages it cites: at least 75% of its distinct
 content words (stop words dropped, a plural `s` stripped) must be in them, and every exact term must be found as
 written, as a whole word and a whole number ("500" isn't in "1,500" or "-500") (code spans; numbers, "1,500" and
@@ -434,8 +469,31 @@ model answers, which CI would then replay.
 eval/baseline.json` on the real corpus with the real models and fails if any system's recall@k drops by more than one
 question's worth or its MRR by more than 0.01 (slack for float differences between machines moving a near-tie), or if
 the settings differ: the question file's SHA-256, the corpus commit, the chunker and chunk count, the models, depth,
-candidates and the RRF k. A change that improves retrieval should commit a new baseline with it, so the gate then
-holds the new level.
+candidates, the RRF k and BM25's k1 and b. A change that improves retrieval should commit a new baseline with it, so the
+gate then holds the new level.
+
+**The ablation and the default** (day 5). All nine systems on the 110 questions (README "Results (v1.0.0)" has the
+tables; `eval/baseline.json` every rank). Three findings, each from paired counts (the questions one system finds in its
+top k and the other doesn't) and the exact sign test:
+
+1. BM25 fixes full-text search: recall@10 0.336 to 0.473, MRR@20 0.175 to 0.379; on identifier questions recall@10
+   0.618 to 0.891. At 1, BM25 alone finds 28 questions ts_rank_cd misses and misses 3 it finds (p < 0.001). Paraphrase
+   questions stay out of reach of any word match (recall@10 0.055 both).
+2. BM25 makes fusion better (hybrid-bm25 against hybrid: 17 to 6 at 1, p = 0.035; 14 to 4 at 5, p = 0.031) but not
+   better than vector alone: level at 1 and 5 (11 to 10, 5 to 12), behind at 10 (2 to 13, p = 0.007) and 20 (0 to 7,
+   p = 0.016). On this corpus, embeddings of passages with their heading paths find identifiers as well as words do
+   (vector recall@10 on identifier questions: 1.000), and RRF lets a full-text list that is wrong push a right vector
+   hit down. A smaller RRF k (day 4's sweep) or weighting the lists may change that; not tried on BM25.
+3. The reranker doesn't help vector on these questions: level at every k (11 to 7 at 1, 6 to 12 at 5, 4 to 10 at 10;
+   all p >= 0.18). It helps the ts_rank_cd hybrid (18 to 5 at 1, p = 0.011; 13 to 4 at 5, p = 0.049), whose list
+   it partly repairs, and is level over BM25 and hybrid-bm25.
+
+So the default mode is `vector` (`retrieval.DEFAULT_MODE`, for search, ask and the API): it beats day 4's default,
+hybrid reranked, at 5 (10 to 2, p = 0.039), 10 (9 to 0, p = 0.004) and 20 (8 to 1, p = 0.039). `ask` keeps the reranker:
+over vector the difference is in neither direction distinguishable from chance, and a default isn't flipped on that.
+The other modes stay, for the ablation and for corpora where exact words matter more. BM25's k1 and b were swept
+(`scripts/sweep_bm25.py`, 25 settings, on the odd and even halves of the question file): MRR@20 0.348 to 0.379, the
+defaults tie the best, and no setting beats them on both halves.
 
 ## The local database
 
@@ -465,13 +523,14 @@ flowchart LR
         E -->|embed: bge-small| F[(pgvector HNSW)]
         E -->|generated tsvector| G[(full-text GIN)]
     end
-    subgraph online["Answer a question (day 2: retrieval; day 3: rerank, answer, API)"]
-        Q[question] --> V[vector top-k]
-        Q --> K[full-text top-k]
+    subgraph online["Answer a question (day 2: retrieval; day 3: rerank, answer, API; day 5: BM25, the default)"]
+        Q[question] --> V[vector top-k:<br/>the default]
+        Q --> K[full-text top-k:<br/>BM25 or ts_rank_cd]
         F --> V
         G --> K
         V --> R[reciprocal rank fusion]
         K --> R
+        V -->|top 20, by default| X
         R -->|top 20| X[cross-encoder rerank]
         X -->|top 5| L{LLM provider:<br/>recorded by default}
         L -->|claims| C[citation check:<br/>quote in its passage]
@@ -485,16 +544,16 @@ flowchart LR
     end
 ```
 
-## Later days (plan)
+## The days
 
+- **Day 1, the corpus and storage.** "The corpus" to "Storage" above.
 - **Day 2, retrieval.** Done: "Embeddings" and "Retrieval" above.
 - **Day 3, answers.** Done: "Reranking", "Answers" and "The API" above.
 - **Day 4, evaluation.** Done: "Evaluation" above. The choice of `candidates` and the RRF k was measured
   (`scripts/sweep_fusion.py`, on two halves of the questions): no setting beats vector alone and a smaller k helps
   hybrid on both halves, so the fault is the full-text list and the defaults stay until it is fixed.
-- **Day 5.** BM25-style weighting (inverse document frequency) for full-text search, measured against ts_rank_cd;
-  then the default retrieval mode chosen from the ablation table (full-text vs vector vs hybrid, with and without the
-  reranker), README results, WALKTHROUGH.md, v1.0.0.
+- **Day 5, BM25 and the release.** Done: BM25 in "Retrieval", the ablation and the default in "Evaluation"; v1.0.0
+  (CHANGELOG.md).
 
 ## Testing
 
