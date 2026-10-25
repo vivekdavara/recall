@@ -218,9 +218,11 @@ Day 5's migration (`003_bm25.sql`) adds `chunks.search_length`, BM25's document 
 positions in the search vector (a lexeme three times counts three; stop words aren't lexemes). A generated column can't
 read another generated column, and a copy of the vector's expression could drift from it, so the expression becomes a
 function, `chunk_search_vector(heading_path, content)`, and both columns are generated from it (PostgreSQL 17's `ALTER
-COLUMN ... SET EXPRESSION` changes the existing one; the table is rewritten). A tsvector keeps at most 256 positions
-of one lexeme; chunks hold at most a few hundred words (154 lexemes at most on this corpus, 60.8 on average), so
-none are lost.
+COLUMN ... SET EXPRESSION` changes the existing one; the table is rewritten). A tsvector keeps at most 255 positions
+of one lexeme from one `to_tsvector` call, so a chunk that repeats a word more often than that counts it 255 times, in
+its length and in BM25's tf alike. The chunker's token bound doesn't prevent it (`x_x_..._x` is one chunker token and
+any number of lexemes; the day-5 review), but on this corpus no chunk repeats a lexeme more than 23 times, and chunks
+hold 3 to 154 lexemes, 60.8 on average.
 
 ## Embeddings
 

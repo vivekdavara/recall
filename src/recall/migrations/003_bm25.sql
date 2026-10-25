@@ -9,7 +9,9 @@ CREATE FUNCTION chunk_search_vector(heading_path text[], content text) RETURNS t
         || to_tsvector('english', content);
 
 -- How many lexemes a vector holds, counting every position: a lexeme that occurs three times counts three times.
--- (A tsvector keeps at most 256 positions of one lexeme; a chunk is at most a few hundred words, so none is lost.)
+-- A tsvector keeps at most 255 positions of one lexeme from one to_tsvector call, so a chunk repeating a word more
+-- often counts it that many times, here and in BM25's tf alike; the chunker's bound doesn't prevent it, since
+-- x_x_..._x is one of its tokens (the day-5 review). On the real corpus no chunk repeats a lexeme more than 23 times.
 CREATE FUNCTION tsvector_positions(v tsvector) RETURNS integer
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     RETURN (SELECT coalesce(sum(cardinality(l.positions)), 0) FROM unnest(v) AS l);

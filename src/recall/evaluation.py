@@ -286,7 +286,7 @@ def modes_of(systems: Sequence[System]) -> list[retrieval.Mode]:
 
 @dataclass(frozen=True)
 class Report:
-    settings: Mapping[str, Any]  # the question set's digest, the models, depth, candidates, rrf_k
+    settings: Mapping[str, Any]  # the question set's digest, the corpus, the models, depth, candidates, rrf_k, bm25
     scores: Mapping[str, Scores]  # system -> all questions
     by_kind: Mapping[str, Mapping[str, Scores]]  # system -> kind -> that kind's questions
     ranks: Mapping[str, Mapping[str, int | None]]  # system -> question id -> rank of its first gold chunk
@@ -433,10 +433,13 @@ def compare(current: Mapping[str, Any], baseline: Any) -> list[str]:
     if not baseline["scores"]:
         return ["the baseline measures no system"]
     if current["settings"] != baseline["settings"]:
+        # A key one side lacks is a change, even where the other holds None (the day-5 review: a day-4 baseline has
+        # no "bm25" key, a report without BM25 holds None, and .get() made them equal, so the message named nothing).
+        missing = object()
         changed = sorted(
             k
             for k in set(current["settings"]) | set(baseline["settings"])
-            if current["settings"].get(k) != baseline["settings"].get(k)
+            if current["settings"].get(k, missing) != baseline["settings"].get(k, missing)
         )
         return [f"the settings differ from the baseline's ({', '.join(changed)}): write a new baseline"]
     problems = [

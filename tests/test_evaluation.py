@@ -9,6 +9,7 @@ import psycopg
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from test_bm25 import rare_and_common
 from test_retrieval import load
 
 from recall import retrieval
@@ -332,9 +333,24 @@ def test_candidates_and_rrf_k_reach_the_hybrid_query(conn: psycopg.Connection, m
     assert evaluate(conn, questions, "sha", None, None, ["full-text"]).settings["candidates"] is None
     # BM25's parameters are settings only when a BM25 system is measured; they're part of what a baseline holds.
     assert r.settings["bm25"] is None
-    with_bm25 = evaluate(conn, questions, "sha", None, None, ["bm25"]).settings
+    with_bm25 = evaluate(conn, questions, "sha", HashEmbedder(), None, ["bm25"]).settings
     assert with_bm25["bm25"] == {"k1": retrieval.BM25_K1, "b": retrieval.BM25_B}
+    # BM25 uses no vectors, so no embedder is recorded even when one is given.
     assert with_bm25["candidates"] is None and with_bm25["embedder"] is None
+    # hybrid-bm25 alone fuses (candidates, RRF k), ranks by BM25 and embeds (the day-5 review's M15 to M17).
+    fused = evaluate(conn, questions, "sha", HashEmbedder(), None, ["hybrid-bm25"], candidates=7, rrf_k=3).settings
+    assert (fused["candidates"], fused["rrf_k"]) == (7, 3)
+    assert fused["bm25"] == {"k1": retrieval.BM25_K1, "b": retrieval.BM25_B}
+    assert fused["embedder"] == HashEmbedder().name
+
+
+def test_rank_all_fuses_the_bm25_list_for_hybrid_bm25(conn: psycopg.Connection):
+    rare_and_common(conn)
+    questions = [question("q", ("rare.md", "response with lifespan"), text="response lifespan")]
+    out = rank_all(conn, questions, gold_chunks(conn, questions), HashEmbedder(), None, ["hybrid", "hybrid-bm25"])
+    # Day-5 review M18: rank_all passing ts_rank_cd for hybrid-bm25 left every test green.
+    assert out["hybrid-bm25"][0].rank == 1
+    assert out["hybrid"][0].rank != 1
 
 
 def test_a_system_the_baseline_lacks_needs_a_new_baseline():

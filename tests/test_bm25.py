@@ -264,3 +264,41 @@ def test_b_zero_ignores_length_and_k1_zero_ignores_repeats(conn: psycopg.Connect
 def test_bm25_parameters_are_checked(conn: psycopg.Connection, k1: float, b: float):
     with pytest.raises(ValueError, match="k1 >= 0 and b from 0 to 1"):
         full_text(conn, "x", ranking="bm25", k1=k1, b=b)
+
+
+def test_the_parameters_are_the_usual_defaults():
+    # Pinned as specified (DESIGN.md "Retrieval"); the other tests use the constants (the day-5 review's M9, M10).
+    assert (BM25_K1, BM25_B) == (1.2, 0.75)
+
+
+def rare_and_common(conn: psycopg.Connection) -> None:
+    """A corpus where the two rankings disagree on the top: ts_rank_cd counts three "response"s above one "response"
+    and one "lifespan"; BM25 weighs "lifespan", in one chunk, far above "response", in all."""
+    load(
+        conn,
+        [
+            *(doc(f"c{i}.md", "response response response here") for i in range(8)),
+            doc("rare.md", "response with lifespan"),
+        ],
+    )
+
+
+def test_hybrid_bm25_fuses_the_bm25_list_not_ts_rank_cds(conn: psycopg.Connection):
+    rare_and_common(conn)
+    e = HashEmbedder()
+    q = "response lifespan"
+
+    def rare_text_rank(mode: retrieval.Mode) -> int | None:
+        return next(h.full_text_rank for h in search(conn, q, e, mode, 10) if h.path == "rare.md")
+
+    assert rare_text_rank("hybrid-bm25") == 1
+    assert rare_text_rank("hybrid") != 1  # the day-5 review's M14: "hybrid-bm25" mapped to ts_rank_cd passed
+
+
+def test_tied_scores_go_to_the_lower_chunk_id_at_the_limit_too(conn: psycopg.Connection):
+    load(conn, [doc(f"t{i}.md", "token value") for i in range(3)])
+    ids = sorted(r[0] for r in conn.execute("SELECT id FROM chunks"))
+    hits = bm25(conn, "token", 3)
+    assert len({h.score for h in hits}) == 1  # one score: same tf, length and idf
+    assert [h.chunk_id for h in hits] == ids
+    assert [h.chunk_id for h in bm25(conn, "token", 2)] == ids[:2]  # the limit cuts the highest id
