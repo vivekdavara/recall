@@ -231,10 +231,11 @@ def test_the_vector_query_can_use_the_hnsw_index(conn: psycopg.Connection):
     assert "Index Scan using chunks_embedding_hnsw" in plan(conn, sql, {"vector": retrieval.vector_literal(v), "n": 5})
 
 
-def test_the_full_text_query_can_use_the_gin_index(conn: psycopg.Connection):
+@pytest.mark.parametrize("ranking", ["ts_rank_cd", "bm25"])
+def test_the_full_text_query_can_use_the_gin_index(conn: psycopg.Connection, ranking: retrieval.Ranking):
     load(conn)
-    sql = f"WITH {retrieval._FULL_TEXT} SELECT * FROM fts"
-    params = {"question": "default values", "n": 5, **retrieval._TEXT_LIMITS}
+    sql = f"WITH {retrieval._text_ctes(ranking)} SELECT * FROM fts"
+    params = {"question": "default values", "n": 5, **retrieval._TEXT_LIMITS, **retrieval._BM25_PARAMS}
     assert "chunks_search_vector_gin" in plan(conn, sql, params)
 
 
@@ -261,7 +262,8 @@ def test_an_identifier_matches_as_written_not_as_its_parts(conn: psycopg.Connect
 
 def test_an_unknown_mode_is_refused_not_run_as_hybrid(conn: psycopg.Connection):
     load(conn)
-    with pytest.raises(ValueError, match="mode must be one of full-text, vector, hybrid, not 'fulltext'"):
+    message = "mode must be one of full-text, bm25, vector, hybrid, hybrid-bm25, not 'fulltext'"
+    with pytest.raises(ValueError, match=message):
         search(conn, "x", HashEmbedder(), "fulltext", 3)  # type: ignore[arg-type]
 
 

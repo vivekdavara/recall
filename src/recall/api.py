@@ -282,14 +282,14 @@ def create_app(make_services: Callable[[], Services] = services_from_environment
         return JSONResponse({"detail": str(e)}, status_code=503)
 
     def needs_embedder(mode: retrieval.Mode) -> None:
-        if mode != "full-text" and state["models"].embedder is None:
-            raise Unavailable(f"no embedding model is loaded, so only full-text search works, not {mode}")
+        if mode not in retrieval.TEXT_MODES and state["models"].embedder is None:
+            raise Unavailable(f"no embedding model is loaded, so only full-text and bm25 search work, not {mode}")
 
     def embed(mode: retrieval.Mode, question: str) -> list[float] | None:
         """The question's vector, made before the handler takes a connection: the embedder waits its turn for the
         model lock, and a request waiting there mustn't hold a connection another request could use."""
         embedder = state["models"].embedder
-        return None if mode == "full-text" or embedder is None else embedder.embed_query(question)
+        return None if mode in retrieval.TEXT_MODES or embedder is None else embedder.embed_query(question)
 
     @app.post("/ask")
     def post_ask(body: AskRequest) -> dict[str, Any]:

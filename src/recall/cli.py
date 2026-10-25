@@ -19,7 +19,7 @@ from recall.corpus.fetch import CorpusError
 from recall.corpus.load import load
 from recall.corpus.normalize import NormalizeError
 from recall.embedding import DEFAULT_MODEL, Embedder, HashEmbedder, ModelUnavailable
-from recall.evaluation import QuestionSetError
+from recall.evaluation import SYSTEMS, QuestionSetError
 
 
 def data_dir() -> Path:
@@ -160,10 +160,10 @@ def cmd_search(args: argparse.Namespace) -> int:
         return 1
     try:
         embedder = None
-        if args.mode != "full-text":
+        if args.mode not in retrieval.TEXT_MODES:
             # Check the stored vectors' model before loading one (seconds, or a download), on a connection closed
             # before the load, so no connection sits idle through it (a server's idle timeout would end it). search
-            # checks again, with the query, in one snapshot. Full-text search needs no model.
+            # checks again, with the query, in one snapshot. Full-text search (either ranking) needs no model.
             with db.connect() as conn:
                 retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
             embedder = make_embedder(args.embedder)
@@ -205,7 +205,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
         return 1
     try:
         embedder = None
-        if args.mode != "full-text":
+        if args.mode not in retrieval.TEXT_MODES:
             # As in search: check the stored vectors' model before loading one, on a connection closed meanwhile.
             with db.connect() as conn:
                 retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
@@ -278,7 +278,8 @@ def cmd_eval(args: argparse.Namespace) -> int:
         provider_name = f"provider {provider.name}" if provider is not None else "no LLM"
     systems = args.systems
     embedder = None
-    if args.answers or any(s != "full-text" for s in systems):  # answers are hybrid, as ask's are
+    # Answers retrieve as ask does by default, with vectors.
+    if args.answers or any(m not in retrieval.TEXT_MODES for m in evaluation.modes_of(systems)):
         # As in search: check the stored vectors' model before loading one.
         with db.connect() as conn:
             retrieval.check_model_name(conn, HashEmbedder().name if args.embedder == "hash" else DEFAULT_MODEL.name)
@@ -341,8 +342,6 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def systems_list(text: str) -> list[str]:
-    from recall.evaluation import SYSTEMS
-
     names = [s.strip() for s in text.split(",") if s.strip()]
     unknown = [s for s in names if s not in SYSTEMS]
     if not names or unknown:
@@ -426,8 +425,8 @@ def parser() -> argparse.ArgumentParser:
     e.add_argument(
         "--systems",
         type=systems_list,
-        default=["full-text", "vector", "hybrid", "vector+rerank", "hybrid+rerank"],
-        help="comma-separated (default: all five: full-text, vector, hybrid, vector+rerank, hybrid+rerank)",
+        default=list(SYSTEMS),
+        help=f"comma-separated (default: all {len(SYSTEMS)}: {', '.join(SYSTEMS)})",
     )
     e.add_argument("--candidates", type=list_length, default=retrieval.DEFAULT_CANDIDATES, help="hybrid's lists")
     e.add_argument("--rrf-k", type=int, default=retrieval.RRF_K, help="the k in 1 / (k + rank) (default %(default)s)")

@@ -137,7 +137,7 @@ def test_healthz_reports_the_corpus_and_the_models(client: TestClient):
         {"question": "q", "passages": 21},
         {"question": "q", "passages": 6, "depth": 5},
         {"question": "q", "depth": 101},
-        {"question": "q", "mode": "bm25"},
+        {"question": "q", "mode": "tf-idf"},
         {"question": "q", "candidates": 1001},
         {"question": 5},
     ],

@@ -186,7 +186,7 @@ def test_migrating_a_day_one_database_keeps_its_chunks_and_the_next_ingest_embed
             " token_count) VALUES (%s, 0, '{}', 0, %s, %s, 6)",
             (doc_id[0], len(text), text),
         )
-        assert db.migrate(conn) == ["002_retrieval"]
+        assert db.migrate(conn) == ["002_retrieval", "003_bm25"]
         assert conn.execute("SELECT embedding IS NULL, search_vector::text FROM chunks").fetchall() == [
             (True, "'gamma':1 'head':4")
         ]

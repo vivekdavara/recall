@@ -1,4 +1,5 @@
-"""Retrieve chunks for a question: full-text search, vector search, and both fused by reciprocal rank fusion.
+"""Retrieve chunks for a question: full-text search (ranked by ts_rank_cd or by BM25), vector search, and a
+full-text list and the vector list fused by reciprocal rank fusion.
 
 DESIGN.md "Retrieval" is the specification. Each retriever is one SQL query; the hybrid one runs both retrievers
 as CTEs of a single query and fuses their ranks in SQL, so it reads one snapshot and makes one round trip.
@@ -16,8 +17,12 @@ from psycopg import pq
 from recall.db import vector_literal
 from recall.embedding import Embedder
 
-Mode = Literal["full-text", "vector", "hybrid"]
-MODES: tuple[Mode, ...] = ("full-text", "vector", "hybrid")
+# full-text and hybrid rank full-text matches by ts_rank_cd, bm25 and hybrid-bm25 by BM25.
+Mode = Literal["full-text", "bm25", "vector", "hybrid", "hybrid-bm25"]
+MODES: tuple[Mode, ...] = ("full-text", "bm25", "vector", "hybrid", "hybrid-bm25")
+# The modes that need no question vector, so no embedding model.
+TEXT_MODES: tuple[Mode, ...] = ("full-text", "bm25")
+Ranking = Literal["ts_rank_cd", "bm25"]
 
 DEFAULT_K = 10
 # How many chunks each retriever hands to the fusion. A chunk outside both lists can't be fused in, so this bounds
@@ -31,12 +36,17 @@ RRF_K = 60
 EF_SEARCH_MIN = 40
 # pgvector's largest ef_search. A list is at most this long, so ef_search can always be raised to the list length.
 MAX_K = 1000
-# What full-text search uses of a question (see _FULL_TEXT): its first 64 distinct words, a word's phrase only if it
+# What full-text search uses of a question (see _PHRASES): its first 64 distinct words, a word's phrase only if it
 # has at most 16 lexemes (31 query nodes), and words only while the query has at most 256 nodes in all.
 MAX_QUESTION_WORDS = 64
 MAX_PHRASE_NODES = 31
 MAX_QUERY_NODES = 256
 _TEXT_LIMITS = {"max_words": MAX_QUESTION_WORDS, "max_phrase_nodes": MAX_PHRASE_NODES, "max_nodes": MAX_QUERY_NODES}
+# BM25's parameters, at the usual defaults (Robertson and Zaragoza, 2009; Lucene's): k1 bounds what repeating a word
+# adds (tf's contribution tends to k1 + 1), b is how far a chunk's length relative to the average discounts it.
+BM25_K1 = 1.2
+BM25_B = 0.75
+_BM25_PARAMS = {"k1": BM25_K1, "b": BM25_B}
 
 
 @dataclass(frozen=True)
@@ -49,8 +59,8 @@ class Hit:
     start: int
     end: int
     content: str
-    score: float  # full-text: ts_rank_cd; vector: cosine similarity; hybrid: the RRF sum
-    full_text_rank: int | None  # 1-based rank in the full-text list (hybrid: None if not in it)
+    score: float  # full-text: ts_rank_cd or BM25; vector: cosine similarity; hybrid: the RRF sum
+    full_text_rank: int | None  # 1-based rank in the full-text list, by either ranking (hybrid: None if not in it)
     vector_rank: int | None
 
 
@@ -58,42 +68,100 @@ class ModelMismatch(RuntimeError):
     """The stored vectors weren't made by the embedder asked to search them."""
 
 
-# An OR over the question's words (split at whitespace), each word a phrase of its lexemes. OR, because
-# plainto_tsquery ANDs every word, so a chunk would have to hold all of them. A phrase, because the parser splits an
-# identifier: response_model_exclude_unset is four lexemes, and ORing those four ranks every chunk about response
-# models above the one about that parameter; as a phrase they must be adjacent, as they are in the identifier. A
-# word that is only stop words (or punctuation) has no lexemes and is left out. The text form of a tsquery quotes
-# each lexeme, so wrapping each phrase in parentheses and joining with ' | ' can't change what a lexeme says. The
-# query's size is bounded (the limits above): ts_rank_cd allocates about 32 KB per query node, so a question of
-# 20,000 words asked PostgreSQL for 1.3 GB and failed, and one word with no spaces ("0,1,2,...,19999", a pasted
-# list) is a phrase of 39,999 nodes, whose text overflowed the stack when cast back to a tsquery (the day-2
-# reviews). So each distinct phrase counts once, a phrase over MAX_PHRASE_NODES is skipped, and words are taken in
-# order while the query's running count of nodes, its ORs included, stays within MAX_QUERY_NODES, at most
-# MAX_QUESTION_WORDS of them.
-_FULL_TEXT = """
+# The question's words as phrases, which both full-text rankings search for. Each word (split at whitespace) becomes
+# a phrase of its lexemes, `phrase`, kept with the word it came from (`word`, the first such word) and its place
+# (`n`). A phrase, because the parser splits an identifier: response_model_exclude_unset is four lexemes, and ORing
+# those four ranks every chunk about response models above the one about that parameter; as a phrase they must be
+# adjacent, as they are in the identifier. A word that is only stop words (or punctuation) has no lexemes and is left
+# out. The query's size is bounded (the limits above): ts_rank_cd allocates about 32 KB per query node, so a question
+# of 20,000 words asked PostgreSQL for 1.3 GB and failed, and one word with no spaces ("0,1,2,...,19999", a pasted
+# list) is a phrase of 39,999 nodes, whose text overflowed the stack when cast back to a tsquery (the day-2 reviews).
+# So each distinct phrase counts once, a phrase over MAX_PHRASE_NODES is skipped, and words are taken in order while
+# the query's running count of nodes, its ORs included, stays within MAX_QUERY_NODES, at most MAX_QUESTION_WORDS of
+# them.
+#
+# `query` ORs the phrases. OR, because plainto_tsquery ANDs every word, so a chunk would have to hold all of them.
+# The text form of a tsquery quotes each lexeme, so wrapping each phrase in parentheses and joining with ' | ' can't
+# change what a lexeme says. No phrases make a NULL query, which matches nothing.
+_PHRASES = """
+phrases AS (
+    SELECT phrase, word, n
+    FROM (
+        -- Each phrase's nodes and the OR before it (the first has none).
+        SELECT phrase, word, n, sum(numnode(phrase) + 1) OVER (ORDER BY n) - 1 AS nodes
+        FROM (
+            SELECT phrase, (array_agg(w.word ORDER BY w.n))[1] AS word, min(w.n) AS n
+            FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),
+                LATERAL phraseto_tsquery('english', w.word) AS phrase
+            WHERE numnode(phrase) BETWEEN 1 AND %(max_phrase_nodes)s
+            GROUP BY phrase
+            ORDER BY n
+            LIMIT %(max_words)s
+        ) words
+    ) counted
+    WHERE nodes <= %(max_nodes)s
+),
+query AS (
+    SELECT string_agg('(' || phrase::text || ')', ' | ' ORDER BY n)::tsquery AS query FROM phrases
+)"""
+
+# ts_rank_cd: how often and how close together the query's words occur, with the A/B/D weights; no IDF.
+_TS_RANK_CD = """
 fts AS (
     SELECT id, score, row_number() OVER (ORDER BY score DESC, id) AS rank
     FROM (
         SELECT c.id, ts_rank_cd(c.search_vector, q.query, 1) AS score
-        FROM chunks c, (
-            SELECT string_agg('(' || phrase::text || ')', ' | ' ORDER BY n)::tsquery AS query
-            FROM (
-                -- Each phrase's nodes and the OR before it (the first has none).
-                SELECT phrase, n, sum(numnode(phrase) + 1) OVER (ORDER BY n) - 1 AS nodes
-                FROM (
-                    SELECT phrase, min(w.n) AS n
-                    FROM regexp_split_to_table(%(question)s, '[[:space:]]+') WITH ORDINALITY AS w(word, n),
-                        LATERAL phraseto_tsquery('english', w.word) AS phrase
-                    WHERE numnode(phrase) BETWEEN 1 AND %(max_phrase_nodes)s
-                    GROUP BY phrase
-                    ORDER BY n
-                    LIMIT %(max_words)s
-                ) words
-            ) counted
-            WHERE nodes <= %(max_nodes)s
-        ) q
+        FROM chunks c, query q
         WHERE c.search_vector @@ q.query
         ORDER BY score DESC, c.id
+        LIMIT %(n)s
+    ) ranked
+)"""
+
+# BM25 (DESIGN.md "Retrieval"), each phrase a term, over the chunks the same OR query matches:
+#   score = sum over phrases of idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * length / average length))
+#   idf = ln(1 + (chunks - df + 0.5) / (df + 0.5))   (Lucene's form: never negative)
+# tf is how often the phrase occurs in the chunk, df how many chunks it occurs in, length the chunk's lexemes
+# (search_length), all from the search vectors' positions. A phrase occurs at a start position when each of its
+# lexemes is at its offset from there; the offsets come from to_tsvector of the word the phrase was made from, which
+# numbers a word's lexemes as phraseto_tsquery spaces them (a stop word inside leaves a gap). A chunk's positions of
+# one lexeme are distinct, so a start that `size` of the phrase's lexemes reach has all of them. Every chunk holding
+# a phrase matches the OR query, so df is counted from tf's rows: the two can't disagree.
+_BM25 = """
+lexemes AS (
+    SELECT p.n, l.lexeme, pos - min(pos) OVER (PARTITION BY p.n) AS shift, count(*) OVER (PARTITION BY p.n) AS size
+    FROM phrases p, unnest(to_tsvector('english', p.word)) AS l, unnest(l.positions) AS pos
+),
+matched AS (
+    SELECT c.id, c.search_vector, c.search_length FROM chunks c, query q WHERE c.search_vector @@ q.query
+),
+tf AS (
+    SELECT id, n, count(*) AS tf
+    FROM (
+        SELECT m.id, x.n
+        FROM matched m, unnest(m.search_vector) AS l, unnest(l.positions) AS pos, lexemes x
+        WHERE x.lexeme = l.lexeme
+        GROUP BY m.id, x.n, pos - x.shift
+        HAVING count(*) = max(x.size)
+    ) starts
+    GROUP BY id, n
+),
+totals AS (
+    SELECT count(*)::float8 AS chunks, avg(search_length)::float8 AS average_length FROM chunks
+),
+idf AS (
+    SELECT n, ln(1 + (t.chunks - count(*) + 0.5) / (count(*) + 0.5)) AS idf FROM tf, totals t GROUP BY n, t.chunks
+),
+fts AS (
+    SELECT id, score, row_number() OVER (ORDER BY score DESC, id) AS rank
+    FROM (
+        SELECT f.id, sum(
+            i.idf * f.tf * (%(k1)s + 1)
+            / (f.tf + %(k1)s * (1 - %(b)s + %(b)s * m.search_length / t.average_length))
+        ) AS score
+        FROM tf f JOIN idf i USING (n) JOIN matched m USING (id), totals t
+        GROUP BY f.id
+        ORDER BY score DESC, f.id
         LIMIT %(n)s
     ) ranked
 )"""
@@ -142,11 +210,13 @@ def check_model_name(conn: psycopg.Connection, name: str) -> None:
         )
 
 
-def full_text(conn: psycopg.Connection, question: str, k: int = DEFAULT_K) -> list[Hit]:
-    """The k chunks whose search vectors best match any of the question's words, by ts_rank_cd."""
+def full_text(
+    conn: psycopg.Connection, question: str, k: int = DEFAULT_K, *, ranking: Ranking = "ts_rank_cd"
+) -> list[Hit]:
+    """The k chunks whose search vectors best match any of the question's words, by ts_rank_cd or BM25."""
     _check_sizes(k, k)
-    sql = f"WITH {_FULL_TEXT} SELECT {_HIT_COLUMNS}, f.score, f.rank, NULL FROM fts f {_JOIN} ORDER BY f.rank"
-    return _hits(conn, sql, {"question": question, "n": k, **_TEXT_LIMITS}, ef_search=None)
+    sql = f"WITH {_text_ctes(ranking)} SELECT {_HIT_COLUMNS}, f.score, f.rank, NULL FROM fts f {_JOIN} ORDER BY f.rank"
+    return _hits(conn, sql, {"question": question, "n": k, **_TEXT_LIMITS, **_BM25_PARAMS}, ef_search=None)
 
 
 def vector(conn: psycopg.Connection, query_vector: Sequence[float], k: int = DEFAULT_K) -> list[Hit]:
@@ -164,8 +234,10 @@ def hybrid(
     *,
     candidates: int = DEFAULT_CANDIDATES,
     rrf_k: int = RRF_K,
+    ranking: Ranking = "ts_rank_cd",
 ) -> list[Hit]:
-    """Both retrievers' top `candidates`, fused: score = sum over the lists a chunk is in of 1 / (rrf_k + rank).
+    """Both retrievers' top `candidates`, fused: score = sum over the lists a chunk is in of 1 / (rrf_k + rank). The
+    full-text list is ranked by `ranking`.
 
     Ties (a chunk first in one list and another first in the other) go to the lower chunk id, so results repeat.
     """
@@ -173,7 +245,7 @@ def hybrid(
     if rrf_k < 0:
         raise ValueError(f"rrf_k must not be negative, not {rrf_k}")
     sql = (
-        f"WITH {_FULL_TEXT}, {_VECTOR}, {_FUSED}"
+        f"WITH {_text_ctes(ranking)}, {_VECTOR}, {_FUSED}"
         f" SELECT {_HIT_COLUMNS}, f.score, f.fts_rank, f.vec_rank FROM fused f {_JOIN}"
         " ORDER BY f.score DESC, f.id LIMIT %(k)s"
     )
@@ -184,6 +256,7 @@ def hybrid(
         "k": k,
         "rrf_k": rrf_k,
         **_TEXT_LIMITS,
+        **_BM25_PARAMS,
     }
     return _hits(conn, sql, params, ef_search=candidates)
 
@@ -203,8 +276,8 @@ def search(
     transaction of their own, so the connection must not be inside a transaction already."""
     if mode not in MODES:
         raise ValueError(f"mode must be one of {', '.join(MODES)}, not {mode!r}")
-    if mode == "full-text":
-        return full_text(conn, question, k)
+    if mode in TEXT_MODES:
+        return full_text(conn, question, k, ranking=RANKING[mode])
     if embedder is None:
         raise ValueError(f"{mode} retrieval needs an embedder")
     if conn.info.transaction_status != pq.TransactionStatus.IDLE:
@@ -219,7 +292,25 @@ def search(
         check_model(conn, embedder)
         if mode == "vector":
             return vector(conn, query_vector, k)
-        return hybrid(conn, question, query_vector, k, candidates=candidates)
+        return hybrid(conn, question, query_vector, k, candidates=candidates, ranking=RANKING[mode])
+
+
+# Which ranking each mode's full-text list uses.
+RANKING: dict[Mode, Ranking] = {
+    "full-text": "ts_rank_cd",
+    "bm25": "bm25",
+    "hybrid": "ts_rank_cd",
+    "hybrid-bm25": "bm25",
+}
+
+
+def _text_ctes(ranking: Ranking) -> str:
+    """The CTEs that end in `fts` (id, score, rank): the question's phrases, ranked by `ranking`."""
+    if ranking == "ts_rank_cd":
+        return f"{_PHRASES}, {_TS_RANK_CD}"
+    if ranking == "bm25":
+        return f"{_PHRASES}, {_BM25}"
+    raise ValueError(f"ranking must be ts_rank_cd or bm25, not {ranking!r}")
 
 
 _JOIN = "JOIN chunks c ON c.id = f.id JOIN documents d ON d.id = c.document_id"

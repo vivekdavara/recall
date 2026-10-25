@@ -44,7 +44,11 @@ def test_concurrent_migrators_apply_each_migration_once(schema: str):
     for t in threads:
         t.join(timeout=30)
     assert not errors, errors
-    assert sorted(len(a) for a in applied) == [0, 0, 0, len(db.migrations())]
+    # Each migration once, by whichever migrator held the lock for it: the lock is taken per migration, so with three
+    # migrations two migrators can share the work (one applied 001, another 002 and 003), which this test's day-1 form,
+    # one migrator applying all, failed to allow for.
+    assert sorted(v for a in applied for v in a) == [v for v, _ in db.migrations()]
+    assert len(applied) == 4
 
 
 def test_migrate_refuses_a_connection_that_is_not_autocommit():

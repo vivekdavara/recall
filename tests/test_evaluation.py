@@ -17,6 +17,7 @@ from recall.embedding import HashEmbedder
 from recall.evaluation import (
     DEPTH,
     KS,
+    RERANKED,
     SYSTEMS,
     Gold,
     Question,
@@ -26,6 +27,7 @@ from recall.evaluation import (
     evaluate,
     gold_chunks,
     index_settings,
+    modes_of,
     paired,
     paired_table,
     parse_questions,
@@ -174,12 +176,39 @@ def test_every_system_ranks_every_question(conn: psycopg.Connection):
         assert [r.question.id for r in rs] == ["q1", "q2"], system
         assert all(len(r.chunk_ids) <= DEPTH and len(set(r.chunk_ids)) == len(r.chunk_ids) for r in rs)
     assert out["full-text"][0].rank == 1
-    for system, base in (("hybrid+rerank", "hybrid"), ("vector+rerank", "vector")):
+    for system, base in RERANKED.items():
         for plain, reranked in zip(out[base], out[system], strict=True):
             assert sorted(plain.chunk_ids) == sorted(reranked.chunk_ids)  # the reranker only reorders
-    # Full-text needs no embedder or reranker.
-    only = rank_all(conn, questions, gold, None, None, ["full-text"])
+    # Each list is the retriever's own, with its ranking.
+    for q, bm, fused in zip(questions, out["bm25"], out["hybrid-bm25"], strict=True):
+        assert bm.chunk_ids == tuple(h.chunk_id for h in retrieval.full_text(conn, q.question, DEPTH, ranking="bm25"))
+        v = HashEmbedder().embed_query(q.question)
+        expected = retrieval.hybrid(conn, q.question, v, DEPTH, ranking="bm25")
+        assert fused.chunk_ids == tuple(h.chunk_id for h in expected)
+    # Neither full-text ranking needs an embedder or a reranker.
+    only = rank_all(conn, questions, gold, None, None, ["full-text", "bm25"])
     assert [r.chunk_ids for r in only["full-text"]] == [r.chunk_ids for r in out["full-text"]]
+    assert [r.chunk_ids for r in only["bm25"]] == [r.chunk_ids for r in out["bm25"]]
+
+
+def test_each_mode_is_retrieved_once_for_it_and_its_reranked_system(
+    conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    load(conn)
+    calls: list[str] = []
+    real = retrieval.full_text
+
+    def spy(*args: Any, ranking: retrieval.Ranking, **kwargs: Any) -> list[retrieval.Hit]:
+        calls.append(ranking)
+        return real(*args, ranking=ranking, **kwargs)
+
+    monkeypatch.setattr(retrieval, "full_text", spy)
+    questions = [question("q", ("query.md", "skip and limit have default values."))]
+    rank_all(
+        conn, questions, gold_chunks(conn, questions), None, OverlapReranker(), ["bm25+rerank", "full-text", "bm25"]
+    )
+    assert calls == ["ts_rank_cd", "bm25"]
+    assert modes_of(["hybrid-bm25+rerank", "vector", "bm25+rerank"]) == ["bm25", "vector", "hybrid-bm25"]
 
 
 def test_rank_all_refuses_what_it_cant_run(conn: psycopg.Connection):
@@ -187,7 +216,7 @@ def test_rank_all_refuses_what_it_cant_run(conn: psycopg.Connection):
     questions = [question("q", ("query.md", "default values"))]
     gold = gold_chunks(conn, questions)
     with pytest.raises(ValueError, match="unknown systems"):
-        rank_all(conn, questions, gold, HashEmbedder(), None, ["bm25"])  # type: ignore[list-item]
+        rank_all(conn, questions, gold, HashEmbedder(), None, ["tf-idf"])  # type: ignore[list-item]
     with pytest.raises(ValueError, match="need an embedder"):
         rank_all(conn, questions, gold, None, None, ["vector"])
     with pytest.raises(ValueError, match="vector\\+rerank, hybrid\\+rerank needs a reranker"):
@@ -301,6 +330,11 @@ def test_candidates_and_rrf_k_reach_the_hybrid_query(conn: psycopg.Connection, m
     assert (r.settings["candidates"], r.settings["rrf_k"]) == (7, 3)
     assert r.settings["reranker"] is None  # no reranked system measured
     assert evaluate(conn, questions, "sha", None, None, ["full-text"]).settings["candidates"] is None
+    # BM25's parameters are settings only when a BM25 system is measured; they're part of what a baseline holds.
+    assert r.settings["bm25"] is None
+    with_bm25 = evaluate(conn, questions, "sha", None, None, ["bm25"]).settings
+    assert with_bm25["bm25"] == {"k1": retrieval.BM25_K1, "b": retrieval.BM25_B}
+    assert with_bm25["candidates"] is None and with_bm25["embedder"] is None
 
 
 def test_a_system_the_baseline_lacks_needs_a_new_baseline():

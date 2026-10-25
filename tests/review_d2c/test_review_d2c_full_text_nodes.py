@@ -10,10 +10,10 @@ from recall.retrieval import full_text
 
 
 def query_nodes(conn: psycopg.Connection, question: str) -> int:
-    """numnode of the tsquery _FULL_TEXT builds for question (its `q` subquery, run on its own)."""
-    sql = retrieval._FULL_TEXT
-    sub = sql[sql.index("SELECT string_agg") : sql.index(") q\n")]
-    row = conn.execute(f"SELECT numnode(query) FROM ({sub}) q0", {"question": question, **retrieval._TEXT_LIMITS})
+    """numnode of the tsquery full-text search builds for question (the `query` CTE of _PHRASES, which both rankings
+    use; on day 2 it was a subquery of _FULL_TEXT)."""
+    sql = f"WITH {retrieval._PHRASES} SELECT numnode(query) FROM query"
+    row = conn.execute(sql, {"question": question, **retrieval._TEXT_LIMITS})
     found = row.fetchone()
     assert found is not None
     return found[0]
