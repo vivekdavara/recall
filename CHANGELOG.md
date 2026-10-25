@@ -53,7 +53,7 @@ change is recorded here with its numbers.
 
 ### Checking it
 
-- 660 tests (ruff, `mypy --strict`, pytest with Hypothesis) against a real PostgreSQL, 26 of them on the real models and
+- 667 tests (ruff, `mypy --strict`, pytest with Hypothesis) against a real PostgreSQL, 26 of them on the real models and
   the real corpus; CI on GitHub Actions with four jobs (tests with a pgvector service container, the real corpus, the
   cluster script on Ubuntu, and the real models with the evaluation gate).
 - Review agents on every day, their findings kept as tests in `tests/review*/` (README "Reviews").

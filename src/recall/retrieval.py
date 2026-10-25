@@ -24,7 +24,7 @@ MODES: tuple[Mode, ...] = ("full-text", "bm25", "vector", "hybrid", "hybrid-bm25
 # The modes that need no question vector, so no embedding model.
 TEXT_MODES: tuple[Mode, ...] = ("full-text", "bm25")
 # What search, ask and the API use unless told otherwise: chosen from day 5's ablation (DESIGN.md "Evaluation"),
-# where vector alone found more questions' gold chunks than any fusion at k = 10 and 20 (sign test p < 0.02), and more
+# where vector alone found more questions' gold chunks than any fusion at k = 10 and 20 (sign test p <= 0.039), and more
 # than day 4's default, hybrid reranked, at k = 5, 10 and 20.
 DEFAULT_MODE: Mode = "vector"
 Ranking = Literal["ts_rank_cd", "bm25"]
